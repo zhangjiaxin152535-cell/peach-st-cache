@@ -1,0 +1,81 @@
+#peach-st-cache-float {
+    position: fixed;
+    right: 18px;
+    bottom: 96px;
+    z-index: 9500;
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    cursor: default;
+    background: radial-gradient(circle at 30% 25%, #ffe8e0 0%, #f2b5a8 45%, #e08978 100%);
+    box-shadow: 0 8px 22px rgba(80, 40, 30, 0.28);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    user-select: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
+    opacity: 0.92;
+}
+
+#peach-st-cache-float.peach-st-ready {
+    cursor: pointer;
+    opacity: 1;
+    animation: peach-st-pulse 1.6s ease-in-out infinite;
+}
+
+#peach-st-cache-float.peach-st-ready:hover {
+    transform: scale(1.06);
+    box-shadow: 0 10px 26px rgba(80, 40, 30, 0.36);
+}
+
+#peach-st-cache-float.peach-st-busy {
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+#peach-st-cache-float .peach-st-icon {
+    width: 28px;
+    height: 28px;
+    display: block;
+}
+
+#peach-st-cache-float .peach-st-meta {
+    font-size: 10px;
+    line-height: 1.15;
+    color: #4a2f28;
+    font-weight: 700;
+    text-align: center;
+    max-width: 64px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#peach-st-cache-float .peach-st-tokens {
+    font-size: 9px;
+    color: #6a4338;
+    font-weight: 600;
+}
+
+#peach-st-cache-float.peach-st-idle .peach-st-meta,
+#peach-st-cache-float.peach-st-idle .peach-st-tokens {
+    display: none;
+}
+
+@keyframes peach-st-pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+@media (max-width: 600px) {
+    #peach-st-cache-float {
+        right: 12px;
+        bottom: 84px;
+        width: 64px;
+        height: 64px;
+    }
+}

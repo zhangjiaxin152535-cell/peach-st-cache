@@ -1,0 +1,13 @@
+{
+    "display_name": "桃子取回",
+    "loading_order": 120,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "baiqi",
+    "version": "0.1.0",
+    "homePage": "",
+    "auto_update": true,
+    "minimum_client_version": "1.12.0"
+}
