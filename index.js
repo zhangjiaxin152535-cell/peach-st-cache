@@ -27,12 +27,10 @@ const LONG_PRESS_MS = 280;
 /** idle | running — 跟发送/停止同态；只有 running 时点停止才发真中断令 */
 const GEN_IDLE = 'idle';
 const GEN_RUNNING = 'running';
-/** 去尾 /v1 后比对。含公网站、本机中转、线上酒馆容器内网中转 */
 const ALLOWED_BASES = [
     'https://54bbm.54-bbm.win',
     'http://127.0.0.1:8080',
     'http://localhost:8080',
-    'http://sub2api:8080',
 ];
 const NON_PEACH_MSG = '非桃子站无法使用，请关闭插件';
 
