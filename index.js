@@ -51,7 +51,12 @@ let waitingBackend = false;
 let urlOkLogged = false;
 let dragBound = false;
 let suppressClick = false;
+/** 本页初始化后最多提醒一次「非桃子站」 */
 let nonPeachWarned = false;
+/** 本局是否已见过桃子站请求 */
+let sessionSawPeach = false;
+/** @type {ReturnType<typeof setTimeout>|null} */
+let nonPeachPendingTimer = null;
 let hooksBound = false;
 let fetchPatched = false;
 /** @type {'idle'|'running'} */
