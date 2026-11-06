@@ -1219,7 +1219,7 @@ async function onClaimClick() {
         toast('已取回写入气泡（缓存仍保留至倒计时结束）', 'success');
         panelOpen = false;
     } catch (e) {
-        console.warn('[peach-st-cache] claim failed', e);
+        console.warn('[peach-st-cache] claim failed', baseUrl, e);
         toast('取回请求失败', 'error');
     } finally {
         claiming = false;
