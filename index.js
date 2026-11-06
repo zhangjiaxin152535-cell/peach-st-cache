@@ -435,14 +435,21 @@ function stripMarkersFromSettings() {
 }
 
 /**
- * 步骤1+2：真正组好出站包时 — 唯一做站别判断的地方（本包 custom_url）。
- * 非桃子：只 toast，不藏悬浮条、不动显隐。
+ * 步骤1+2：真正组好出站包时 — 站别判断 +（可选）优先密钥闸门。
+ * 非桃子：延后提醒，不藏条；有优先密钥时只给「酒馆密钥=优先密钥」的包打标。
  */
-function onChatCompletionSettingsReady(generate_data) {
+async function onChatCompletionSettingsReady(generate_data) {
     if (!generate_data || typeof generate_data !== 'object') return false;
 
     if (!isPeachRequestUrl(generate_data)) {
-        warnNonPeach(true);
+        scheduleMaybeWarnNonPeach();
+        waitingBackend = false;
+        return false;
+    }
+
+    notePeachRequestSeen();
+
+    if (!(await shouldMarkThisRequest())) {
         waitingBackend = false;
         return false;
     }
@@ -464,7 +471,14 @@ function onChatCompletionSettingsReady(generate_data) {
         generate_data.custom_include_headers,
         `X-Peach-ST-Request-Id: ${activeRequestId}`,
     );
-    ensureMarkersInSettings();
+
+    if (loadApiKeyOverride()) {
+        // 有优先密钥：标记只活在本包，避免写进设置让其它 key 的请求捎上
+        stripMarkersFromSettings();
+    } else {
+        // 没写：与改钥匙前相同
+        ensureMarkersInSettings();
+    }
 
     waitingBackend = true;
     lastSignal = null;
