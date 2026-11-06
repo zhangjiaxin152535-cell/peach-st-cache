@@ -15,7 +15,13 @@ const HEADER_LINE = 'X-Peach-ST-Client: 1';
 const FLOAT_ID = 'peach-st-cache-float';
 const POS_KEY = 'peach-st-cache-float-pos';
 const VIS_KEY = 'peach-st-cache-float-visible';
+/** 可选：插件内优先密钥；空则回退酒馆自定义栏/密钥库 */
+const API_KEY_OVERRIDE_KEY = 'peach-st-cache-api-key-override';
 const MENU_ID = 'peach_st_cache_menu_item';
+const SETTINGS_HINT =
+    '仅限桃子站请求可用，如果一次发送会同时触发多次属于桃子站的请求请在插件内额外添加key';
+/** 同一次连发里非桃子与桃子交错：等一会再决定报不报 */
+const NON_PEACH_BURST_MS = 1500;
 const DRAG_THRESHOLD_PX = 8;
 /** 按住超过此时长才「允许拖」；未真拖过松手仍展开 */
 const LONG_PRESS_MS = 280;
