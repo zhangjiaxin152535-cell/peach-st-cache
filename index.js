@@ -102,17 +102,9 @@ function getCustomEndpoint() {
     };
 }
 
-/** 配置是否像桃子（只供显隐/补问；绝不由此弹「非桃子站」） */
-function isPeachEndpoint() {
-    const { baseUrl } = getCustomEndpoint();
-    if (!baseUrl) return false;
-    const lower = baseUrl.toLowerCase();
-    return ALLOWED_BASES.some((b) => lower === b.toLowerCase());
-}
-
 /**
- * 发请求时专用：只看本包携带的 custom_url（出站目标地址）。
- * 不看连接面板、不退回配置、不看 source。
+ * 仅发请求时用：只看本包携带的 custom_url。
+ * 启动/显隐/复位/补问 —— 一律不做站别判断、不报错。
  */
 function isPeachRequestUrl(generate_data) {
     const raw = String(generate_data?.custom_url || '').trim();
