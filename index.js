@@ -293,7 +293,9 @@ function onUserStopGeneration() {
 
 function onGenerationEndedNormally() {
     setGenState(GEN_IDLE);
-    // 正常收完：不发中断令
+    // 正常收完：不发中断令。
+    // 流里若没带到 peach_st_reclaim（假断/代理裁帧），中转可能已计费入库；必须补问，否则手永远不亮。
+    scheduleCachePoll('generation_ended', 400);
 }
 
 function isInActiveChat() {
