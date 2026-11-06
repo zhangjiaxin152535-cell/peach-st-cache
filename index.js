@@ -174,7 +174,7 @@ async function getTavernCustomApiKey() {
     } catch (e) {
         console.warn('[peach-st-cache] findSecret failed', e);
     }
-    return '';
+        return '';
 }
 
 function injectYamlLine(raw, line) {
@@ -592,7 +592,7 @@ async function scanReclaimFromStream(stream) {
                     if (parsed && parsed.peach_st_reclaim) {
                         onReclaimSignal(parsed.peach_st_reclaim);
                     }
-                } catch {
+            } catch {
                     /* ignore non-json frames */
                 }
             }
@@ -699,13 +699,15 @@ function togglePanelFromBar() {
 }
 
 /**
- * 展开优先：
- * - 按下→松手，期间没真正拖过 → 展开/收起
- * - 按住超过 LONG_PRESS_MS 后才进入可拖状态；再滑出阈值才移动
- * 不靠 click（指针捕获会吞掉 click），松手时自己判定。
+ * 展开/收起/拖拽：只绑在上边横条 .peach-st-bar。
+ * 下面展开面板不参与展开收回、不参与拖拽（点🔑/输入不会误收起）。
+ * - 横条按下→松手且没拖过 → 展开/收起
+ * - 横条长按后滑出阈值 → 移动整块悬浮条
  */
-function bindFloatDrag(el) {
-    if (dragBound || !el) return;
+function bindFloatDrag(floatRoot) {
+    if (dragBound || !floatRoot) return;
+    const bar = floatRoot.querySelector('.peach-st-bar');
+    if (!bar) return;
     dragBound = true;
     let pressActive = false;
     let dragArmed = false; // 长按到时，允许拖
@@ -725,14 +727,15 @@ function bindFloatDrag(el) {
         }
     };
 
-    el.addEventListener('pointerdown', (ev) => {
+    bar.addEventListener('pointerdown', (ev) => {
         if (claiming) return;
         if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+        // 点在展开面板上的事件不会进这里；横条内握拳另走
         onFist = !!ev.target?.closest?.('.peach-st-fist');
         if (onFist) return;
 
-        const r = el.getBoundingClientRect();
-        if (el.style.left === 'auto' || !el.style.left) applyPos(el, r.left, r.top);
+        const r = floatRoot.getBoundingClientRect();
+        if (floatRoot.style.left === 'auto' || !floatRoot.style.left) applyPos(floatRoot, r.left, r.top);
         pressActive = true;
         dragArmed = false;
         moved = false;
@@ -740,34 +743,32 @@ function bindFloatDrag(el) {
         activeId = ev.pointerId;
         startX = ev.clientX;
         startY = ev.clientY;
-        origLeft = parseFloat(el.style.left) || r.left;
-        origTop = parseFloat(el.style.top) || r.top;
-        // 未进拖拽前不抢指针，避免吃掉后续判定
+        origLeft = parseFloat(floatRoot.style.left) || r.left;
+        origTop = parseFloat(floatRoot.style.top) || r.top;
         clearLongPress();
         longPressTimer = setTimeout(() => {
             longPressTimer = null;
             if (!pressActive) return;
             dragArmed = true;
-            el.classList.add('peach-st-dragging');
-            try { el.setPointerCapture(activeId); } catch { /* ignore */ }
+            floatRoot.classList.add('peach-st-dragging');
+            try { bar.setPointerCapture(activeId); } catch { /* ignore */ }
         }, LONG_PRESS_MS);
     });
 
-    el.addEventListener('pointermove', (ev) => {
+    bar.addEventListener('pointermove', (ev) => {
         if (!pressActive || (activeId != null && ev.pointerId !== activeId)) return;
         const dx = ev.clientX - startX;
         const dy = ev.clientY - startY;
         const past = Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX;
 
         if (!dragArmed) {
-            // 长按前就滑了：取消武装，松手仍按「单击展开」
             if (past) clearLongPress();
             return;
         }
         if (!past) return;
         moved = true;
         suppressClick = true;
-        applyPos(el, origLeft + dx, origTop + dy);
+        applyPos(floatRoot, origLeft + dx, origTop + dy);
         ev.preventDefault();
     });
 
@@ -777,31 +778,29 @@ function bindFloatDrag(el) {
         clearLongPress();
         pressActive = false;
         dragArmed = false;
-        el.classList.remove('peach-st-dragging');
-        try { el.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
+        floatRoot.classList.remove('peach-st-dragging');
+        try { bar.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
         activeId = null;
 
         if (didMove) {
-            const c = applyPos(el, parseFloat(el.style.left) || 0, parseFloat(el.style.top) || 0);
+            const c = applyPos(floatRoot, parseFloat(floatRoot.style.left) || 0, parseFloat(floatRoot.style.top) || 0);
             savePos(c.left, c.top);
-            // 拖过就不再展开
             suppressClick = true;
             return;
         }
-        // 没拖过：展开优先（短按或长按未滑）
         if (!onFist) {
             togglePanelFromBar();
         }
     };
-    el.addEventListener('pointerup', endPress);
-    el.addEventListener('pointercancel', (ev) => {
+    bar.addEventListener('pointerup', endPress);
+    bar.addEventListener('pointercancel', (ev) => {
         if (!pressActive || (activeId != null && ev.pointerId !== activeId)) return;
         clearLongPress();
         pressActive = false;
         dragArmed = false;
         moved = false;
-        el.classList.remove('peach-st-dragging');
-        try { el.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
+        floatRoot.classList.remove('peach-st-dragging');
+        try { bar.releasePointerCapture(ev.pointerId); } catch { /* ignore */ }
         activeId = null;
     });
 }
