@@ -411,8 +411,12 @@
 }
 
 @media (max-width: 600px) {
+    /* 手机也默认正中，不再压到右下角 */
     #peach-st-cache-float {
-        right: 10px;
-        bottom: max(84px, env(safe-area-inset-bottom, 0px) + 68px);
+        left: 50%;
+        top: 50%;
+        right: auto;
+        bottom: auto;
+        transform: translate(-50%, -50%);
     }
 }
