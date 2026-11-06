@@ -999,6 +999,8 @@ function renderFloat({ forceShow = false } = {}) {
     } else if (forceShow) {
         $root.css('display', '');
     }
+    // 旧版悬浮条没有🔑时热补上
+    ensureFloatKeyRow($root);
 
     const ready = !!(lastSignal && lastSignal.has_cache && claimToken);
     const costTxt = lastSignal ? formatAmount(lastSignal.actual_cost, { signed: true }) : '';
