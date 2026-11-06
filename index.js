@@ -1111,10 +1111,11 @@ function renderFloat({ forceShow = false } = {}) {
 
     $root.find('.peach-st-cost-num').text(costTxt);
     $root.find('.peach-st-timer').text(`⏱︎${ready || (lastSignal && lastSignal.has_cache) ? formatCountdownFromExpiry() : '--:--'}`);
-    $root.find('.peach-st-in').text(lastSignal?.has_cache ? formatToken(lastSignal.prompt_tokens) : '');
-    $root.find('.peach-st-out').text(lastSignal?.has_cache ? formatToken(lastSignal.completion_tokens) : '');
-    $root.find('.peach-st-cache-read').text(lastSignal?.has_cache ? formatToken(lastSignal.cache_read_tokens) : '');
-    $root.find('.peach-st-cache-create').text(lastSignal?.has_cache ? formatToken(lastSignal.cache_creation_tokens) : '');
+    // 计费数字：有过信号就一直显示；只有新票来才替换。到期不清空。
+    $root.find('.peach-st-in').text(lastSignal ? formatToken(lastSignal.prompt_tokens) : '');
+    $root.find('.peach-st-out').text(lastSignal ? formatToken(lastSignal.completion_tokens) : '');
+    $root.find('.peach-st-cache-read').text(lastSignal ? formatToken(lastSignal.cache_read_tokens) : '');
+    $root.find('.peach-st-cache-create').text(lastSignal ? formatToken(lastSignal.cache_creation_tokens) : '');
     $root.find('.peach-st-bal-peach-num').text(peachBal);
     $root.find('.peach-st-bal-taohe-num').text(taoheBal);
     $root.find('.peach-st-fist').prop('disabled', !ready || claiming);
