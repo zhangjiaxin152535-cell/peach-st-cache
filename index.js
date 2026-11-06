@@ -52,7 +52,12 @@ let waitingBackend = false;
 let urlOkLogged = false;
 let dragBound = false;
 let suppressClick = false;
+/** 本页初始化后最多提醒一次「非桃子站」 */
 let nonPeachWarned = false;
+/** 本局是否已见过桃子站请求；见过则整局不再报非桃子 */
+let sessionSawPeach = false;
+/** @type {ReturnType<typeof setTimeout>|null} */
+let nonPeachPendingTimer = null;
 let hooksBound = false;
 let fetchPatched = false;
 /** @type {'idle'|'running'} */
@@ -119,10 +124,44 @@ function isPeachRequestUrl(generate_data) {
     return ALLOWED_BASES.some((b) => lower === b.toLowerCase());
 }
 
-function warnNonPeach(force = false) {
-    if (!force && nonPeachWarned) return;
-    nonPeachWarned = true;
-    toast(NON_PEACH_MSG, 'warning');
+function notePeachRequestSeen() {
+    sessionSawPeach = true;
+    if (nonPeachPendingTimer) {
+        clearTimeout(nonPeachPendingTimer);
+        nonPeachPendingTimer = null;
+    }
+}
+
+/**
+ * 非桃子：不立刻吼。同一次发送里若稍后还有桃子站请求则作废；
+ * 本局已见过桃子 / 已提醒过 → 永不报。
+ */
+function scheduleMaybeWarnNonPeach() {
+    if (nonPeachWarned || sessionSawPeach) return;
+    if (nonPeachPendingTimer) return;
+    nonPeachPendingTimer = setTimeout(() => {
+        nonPeachPendingTimer = null;
+        if (nonPeachWarned || sessionSawPeach) return;
+        nonPeachWarned = true;
+        toast(NON_PEACH_MSG, 'warning');
+    }, NON_PEACH_BURST_MS);
+}
+
+function loadApiKeyOverride() {
+    try {
+        return String(localStorage.getItem(API_KEY_OVERRIDE_KEY) || '').trim();
+    } catch {
+        return '';
+    }
+}
+
+function saveApiKeyOverride(raw) {
+    const v = String(raw || '').trim();
+    try {
+        if (v) localStorage.setItem(API_KEY_OVERRIDE_KEY, v);
+        else localStorage.removeItem(API_KEY_OVERRIDE_KEY);
+    } catch { /* ignore */ }
+    return v;
 }
 
 function injectYamlLine(raw, line) {
@@ -202,8 +241,12 @@ function isInActiveChat() {
     return false;
 }
 
-/** 从酒馆密钥库取自定义源 API Key（仅补问缓存用） */
+/**
+ * 取回/补问用密钥：插件内可选优先；空则回退酒馆自定义栏 → 密钥库。
+ */
 async function getPeachApiKey() {
+    const override = loadApiKeyOverride();
+    if (override) return override;
     try {
         const fromInput = String($('#api_key_custom').val() || '').trim();
         // 排除遮罩占位
