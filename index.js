@@ -561,7 +561,7 @@ async function scanReclaimFromStream(stream) {
                     if (parsed && parsed.peach_st_reclaim) {
                         onReclaimSignal(parsed.peach_st_reclaim);
                     }
-                } catch {
+            } catch {
                     /* ignore non-json frames */
                 }
             }
