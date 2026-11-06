@@ -3,10 +3,10 @@
     "loading_order": 120,
     "requires": [],
     "optional": [],
-    "js": "index.js?v=0.5.12",
-    "css": "style.css?v=0.5.12",
+    "js": "index.js?v=0.5.13",
+    "css": "style.css?v=0.5.13",
     "author": "baiqi",
-    "version": "0.5.12",
+    "version": "0.5.13",
     "homePage": "https://github.com/zhangjiaxin152535-cell/peach-st-cache",
     "auto_update": true,
     "minimum_client_version": "1.12.0"
