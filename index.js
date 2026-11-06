@@ -15,12 +15,11 @@ const HEADER_LINE = 'X-Peach-ST-Client: 1';
 const FLOAT_ID = 'peach-st-cache-float';
 const POS_KEY = 'peach-st-cache-float-pos';
 const VIS_KEY = 'peach-st-cache-float-visible';
-/** 可选：插件内优先密钥；空则回退酒馆自定义栏/密钥库 */
+/** 可选优先密钥：写了则只服务这把；空则完全走改钥匙前的旧逻辑 */
 const API_KEY_OVERRIDE_KEY = 'peach-st-cache-api-key-override';
 const MENU_ID = 'peach_st_cache_menu_item';
 const SETTINGS_HINT =
     '仅限桃子站请求可用，如果一次发送会同时触发多次属于桃子站的请求请在插件内额外添加key';
-/** 同一次连发里非桃子与桃子交错：等一会再决定报不报 */
 const NON_PEACH_BURST_MS = 1500;
 const DRAG_THRESHOLD_PX = 8;
 /** 按住超过此时长才「允许拖」；未真拖过松手仍展开 */
@@ -52,12 +51,7 @@ let waitingBackend = false;
 let urlOkLogged = false;
 let dragBound = false;
 let suppressClick = false;
-/** 本页初始化后最多提醒一次「非桃子站」 */
 let nonPeachWarned = false;
-/** 本局是否已见过桃子站请求；见过则整局不再报非桃子 */
-let sessionSawPeach = false;
-/** @type {ReturnType<typeof setTimeout>|null} */
-let nonPeachPendingTimer = null;
 let hooksBound = false;
 let fetchPatched = false;
 /** @type {'idle'|'running'} */
@@ -124,44 +118,10 @@ function isPeachRequestUrl(generate_data) {
     return ALLOWED_BASES.some((b) => lower === b.toLowerCase());
 }
 
-function notePeachRequestSeen() {
-    sessionSawPeach = true;
-    if (nonPeachPendingTimer) {
-        clearTimeout(nonPeachPendingTimer);
-        nonPeachPendingTimer = null;
-    }
-}
-
-/**
- * 非桃子：不立刻吼。同一次发送里若稍后还有桃子站请求则作废；
- * 本局已见过桃子 / 已提醒过 → 永不报。
- */
-function scheduleMaybeWarnNonPeach() {
-    if (nonPeachWarned || sessionSawPeach) return;
-    if (nonPeachPendingTimer) return;
-    nonPeachPendingTimer = setTimeout(() => {
-        nonPeachPendingTimer = null;
-        if (nonPeachWarned || sessionSawPeach) return;
-        nonPeachWarned = true;
-        toast(NON_PEACH_MSG, 'warning');
-    }, NON_PEACH_BURST_MS);
-}
-
-function loadApiKeyOverride() {
-    try {
-        return String(localStorage.getItem(API_KEY_OVERRIDE_KEY) || '').trim();
-    } catch {
-        return '';
-    }
-}
-
-function saveApiKeyOverride(raw) {
-    const v = String(raw || '').trim();
-    try {
-        if (v) localStorage.setItem(API_KEY_OVERRIDE_KEY, v);
-        else localStorage.removeItem(API_KEY_OVERRIDE_KEY);
-    } catch { /* ignore */ }
-    return v;
+function warnNonPeach(force = false) {
+    if (!force && nonPeachWarned) return;
+    nonPeachWarned = true;
+    toast(NON_PEACH_MSG, 'warning');
 }
 
 function injectYamlLine(raw, line) {
@@ -241,12 +201,8 @@ function isInActiveChat() {
     return false;
 }
 
-/**
- * 取回/补问用密钥：插件内可选优先；空则回退酒馆自定义栏 → 密钥库。
- */
+/** 从酒馆密钥库取自定义源 API Key（仅补问缓存用） */
 async function getPeachApiKey() {
-    const override = loadApiKeyOverride();
-    if (override) return override;
     try {
         const fromInput = String($('#api_key_custom').val() || '').trim();
         // 排除遮罩占位
@@ -422,13 +378,10 @@ function onChatCompletionSettingsReady(generate_data) {
     if (!generate_data || typeof generate_data !== 'object') return false;
 
     if (!isPeachRequestUrl(generate_data)) {
-        // 可能同一次发送稍后还有桃子站请求：延后、且本局只提醒一次
-        scheduleMaybeWarnNonPeach();
+        warnNonPeach(true);
         waitingBackend = false;
         return false;
     }
-
-    notePeachRequestSeen();
 
     if (!urlOkLogged) {
         urlOkLogged = true;
@@ -561,7 +514,7 @@ async function scanReclaimFromStream(stream) {
                     if (parsed && parsed.peach_st_reclaim) {
                         onReclaimSignal(parsed.peach_st_reclaim);
                     }
-            } catch {
+                } catch {
                     /* ignore non-json frames */
                 }
             }
@@ -775,115 +728,43 @@ function bindFloatDrag(el) {
     });
 }
 
-function updateKeyBtnState() {
-    const $btns = $('.peach-st-key-btn');
-    if (!$btns.length) return;
-    const has = !!loadApiKeyOverride();
-    $btns.toggleClass('peach-st-key-set', has);
-    $btns.attr('title', has
-        ? '已设优先密钥（点此修改；清空则回退酒馆自定义栏）'
-        : '可选：填写后优先用此密钥问缓存；空则用酒馆自定义栏');
-}
-
-function promptApiKeyOverride() {
-    const cur = loadApiKeyOverride();
-    const next = window.prompt(
-        '可选优先密钥（只影响问缓存/取回操作）。写了优先用这里；清空并确定则回退酒馆自定义栏。',
-        cur,
-    );
-    if (next === null) return;
-    const saved = saveApiKeyOverride(next);
-    updateKeyBtnState();
-    toast(saved ? '已保存优先密钥' : '已清除优先密钥，改用酒馆自定义栏', 'success');
-}
-
-/** 悬浮条展开面底部：分割线 + 🔑（已存在则补上） */
-function ensureFloatKeyRow($root) {
-    if (!$root?.length) return;
-    const $panel = $root.find('.peach-st-panel');
-    if (!$panel.length || $panel.find('.peach-st-float-key-row').length) {
-        updateKeyBtnState();
-        return;
-    }
-    $panel.append(`
-        <hr class="peach-st-float-sep" />
-        <div class="peach-st-float-key-row">
-            <button type="button" class="peach-st-key-btn peach-st-float-key-btn" aria-label="可选优先密钥">🔑</button>
-        </div>
-    `);
-    $panel.find('.peach-st-float-key-btn').on('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        promptApiKeyOverride();
-    });
-    updateKeyBtnState();
-}
-
 function ensureSettingsDrawer() {
+    if ($('#peach_st_cache_settings').length) return;
     const $host = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
     if (!$host.length) return;
-
-    if (!$('#peach_st_cache_settings').length) {
-        const $block = $(`
-            <div id="peach_st_cache_settings" class="peach-st-settings">
-                <div class="inline-drawer">
-                    <div class="inline-drawer-toggle inline-drawer-header">
-                        <b>桃子取回</b>
-                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                    </div>
-                    <div class="inline-drawer-content">
-                        <p class="peach-st-settings-hint"></p>
-                        <div class="menu_button menu_button_icon" id="peach_st_cache_reset_pos">复位悬浮条位置</div>
-                        <hr class="peach-st-settings-sep" />
-                        <div class="peach-st-settings-key-row">
-                            <button type="button" class="peach-st-key-btn" id="peach_st_cache_key_btn" aria-label="可选优先密钥">🔑</button>
-                        </div>
-                    </div>
+    const $block = $(`
+        <div id="peach_st_cache_settings" class="peach-st-settings">
+            <div class="inline-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>桃子取回</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <p class="peach-st-settings-hint">仅指定桃子站/本地8080。标记随请求体出发；中转计费后主动回传；魔法棒只显隐。</p>
+                    <div class="menu_button menu_button_icon" id="peach_st_cache_reset_pos">复位悬浮条位置</div>
                 </div>
             </div>
-        `);
-        $host.append($block);
-        $block.find('.inline-drawer-toggle').on('click', function () {
-            $(this).closest('.inline-drawer').toggleClass('open');
-        });
-        $block.find('#peach_st_cache_reset_pos').on('click', () => {
-            try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
-            saveFloatVisible(true);
-            updateWandMenuLabel();
-            renderFloat({ forceShow: true });
-            const el = document.getElementById(FLOAT_ID);
-            if (el) {
-                el.style.left = 'auto';
-                el.style.top = 'auto';
-                el.style.right = '';
-                el.style.bottom = '';
-                restoreOrDefaultPos(el);
-            }
-            toast('已复位悬浮条位置', 'success');
-        });
-        $block.find('#peach_st_cache_key_btn').on('click', (ev) => {
-            ev.preventDefault();
-            promptApiKeyOverride();
-        });
-    }
-
-    $('#peach_st_cache_settings .peach-st-settings-hint').text(SETTINGS_HINT);
-    if (!$('#peach_st_cache_key_btn').length) {
-        const $content = $('#peach_st_cache_settings .inline-drawer-content');
-        if ($content.length && !$content.find('.peach-st-settings-sep').length) {
-            $content.append(`
-                <hr class="peach-st-settings-sep" />
-                <div class="peach-st-settings-key-row">
-                    <button type="button" class="peach-st-key-btn" id="peach_st_cache_key_btn" aria-label="可选优先密钥">🔑</button>
-                </div>
-            `);
-            $('#peach_st_cache_key_btn').on('click', (ev) => {
-                ev.preventDefault();
-                promptApiKeyOverride();
-            });
+        </div>
+    `);
+    $host.append($block);
+    $block.find('.inline-drawer-toggle').on('click', function () {
+        $(this).closest('.inline-drawer').toggleClass('open');
+    });
+    $block.find('#peach_st_cache_reset_pos').on('click', () => {
+        try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
+        saveFloatVisible(true);
+        updateWandMenuLabel();
+        renderFloat({ forceShow: true });
+        const el = document.getElementById(FLOAT_ID);
+        if (el) {
+            el.style.left = 'auto';
+            el.style.top = 'auto';
+            el.style.right = '';
+            el.style.bottom = '';
+            restoreOrDefaultPos(el);
         }
-    }
-    updateKeyBtnState();
+        toast('已复位悬浮条位置', 'success');
+    });
 }
 
 function updateWandMenuLabel() {
@@ -948,10 +829,6 @@ function renderFloat({ forceShow = false } = {}) {
                         <span>⎘ <span class="peach-st-cache-read"></span></span>
                         <span>✎ <span class="peach-st-cache-create"></span></span>
                     </div>
-                    <hr class="peach-st-float-sep" />
-                    <div class="peach-st-float-key-row">
-                        <button type="button" class="peach-st-key-btn peach-st-float-key-btn" aria-label="可选优先密钥">🔑</button>
-                    </div>
                 </div>
             </div>
         `);
@@ -960,11 +837,6 @@ function renderFloat({ forceShow = false } = {}) {
         $root.find('.peach-st-ico-tao').attr('src', ICON_TAO);
         $root.find('.peach-st-ico-taohe').attr('src', ICON_TAOHE);
         $root.find('.peach-st-fist img').attr('src', ICON_FIST);
-        $root.find('.peach-st-float-key-btn').on('click', (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            promptApiKeyOverride();
-        });
 
         // 桃子图标：生成中点击 = 与酒馆停止同权（发真中断令）
         $root.find('.peach-st-cost').on('click', (ev) => {
@@ -999,8 +871,6 @@ function renderFloat({ forceShow = false } = {}) {
     } else if (forceShow) {
         $root.css('display', '');
     }
-    // 旧版悬浮条没有🔑时热补上
-    ensureFloatKeyRow($root);
 
     const ready = !!(lastSignal && lastSignal.has_cache && claimToken);
     const costTxt = lastSignal ? formatAmount(lastSignal.actual_cost, { signed: true }) : '';
