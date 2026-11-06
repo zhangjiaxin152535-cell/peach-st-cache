@@ -776,13 +776,47 @@ function bindFloatDrag(el) {
 }
 
 function updateKeyBtnState() {
-    const $btn = $('#peach_st_cache_key_btn');
-    if (!$btn.length) return;
+    const $btns = $('.peach-st-key-btn');
+    if (!$btns.length) return;
     const has = !!loadApiKeyOverride();
-    $btn.toggleClass('peach-st-key-set', has);
-    $btn.attr('title', has
+    $btns.toggleClass('peach-st-key-set', has);
+    $btns.attr('title', has
         ? '已设优先密钥（点此修改；清空则回退酒馆自定义栏）'
         : '可选：填写后优先用此密钥问缓存；空则用酒馆自定义栏');
+}
+
+function promptApiKeyOverride() {
+    const cur = loadApiKeyOverride();
+    const next = window.prompt(
+        '可选优先密钥（只影响问缓存/取回操作）。写了优先用这里；清空并确定则回退酒馆自定义栏。',
+        cur,
+    );
+    if (next === null) return;
+    const saved = saveApiKeyOverride(next);
+    updateKeyBtnState();
+    toast(saved ? '已保存优先密钥' : '已清除优先密钥，改用酒馆自定义栏', 'success');
+}
+
+/** 悬浮条展开面底部：分割线 + 🔑（已存在则补上） */
+function ensureFloatKeyRow($root) {
+    if (!$root?.length) return;
+    const $panel = $root.find('.peach-st-panel');
+    if (!$panel.length || $panel.find('.peach-st-float-key-row').length) {
+        updateKeyBtnState();
+        return;
+    }
+    $panel.append(`
+        <hr class="peach-st-float-sep" />
+        <div class="peach-st-float-key-row">
+            <button type="button" class="peach-st-key-btn peach-st-float-key-btn" aria-label="可选优先密钥">🔑</button>
+        </div>
+    `);
+    $panel.find('.peach-st-float-key-btn').on('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        promptApiKeyOverride();
+    });
+    updateKeyBtnState();
 }
 
 function ensureSettingsDrawer() {
