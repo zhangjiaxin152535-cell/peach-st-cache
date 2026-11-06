@@ -102,13 +102,38 @@ function normalizeBaseUrl(raw) {
     return u;
 }
 
+/**
+ * 浏览器可直连的中转根。
+ * 发信/计费可走酒馆服务器 → http://sub2api:8080（容器内网）；
+ * 点拳取回/补问/中断是浏览器自己 fetch，打不到 sub2api，须改打公网 54bbm。
+ */
+function browserReachablePeachBase(rawOrBase) {
+    const base = normalizeBaseUrl(rawOrBase);
+    if (!base) return '';
+    const lower = base.toLowerCase();
+    if (
+        lower === 'http://sub2api:8080'
+        || lower === 'https://sub2api:8080'
+        || lower.startsWith('http://sub2api/')
+        || lower.startsWith('https://sub2api/')
+        || lower.includes('://sub2api:')
+    ) {
+        return 'https://54bbm.54-bbm.win';
+    }
+    return base;
+}
+
 function getCustomEndpoint() {
     const ctx = getContext();
     const settings = ctx.chatCompletionSettings || {};
+    const rawUrl = String(settings.custom_url || '').trim();
     return {
         source: settings.chat_completion_source,
-        baseUrl: normalizeBaseUrl(settings.custom_url),
-        rawUrl: String(settings.custom_url || '').trim(),
+        /** 浏览器侧取回/补问/中断用（sub2api 会改写成 54bbm） */
+        baseUrl: browserReachablePeachBase(rawUrl),
+        rawUrl,
+        /** 配置里原始根（可能是容器内网名） */
+        serverBase: normalizeBaseUrl(rawUrl),
     };
 }
 
