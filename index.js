@@ -579,11 +579,13 @@ function startCountdownTick() {
     countdownTimer = setInterval(() => {
         renderFloat();
         if (expiresAtMs && Date.now() >= expiresAtMs) {
+            // 倒计时到：只关掉可取回（手变灰、令牌作废）；费用/token/余额数字保留，等下一票新信号再替换
             if (lastSignal) {
                 lastSignal.has_cache = false;
                 lastSignal.remaining_seconds = 0;
             }
             claimToken = '';
+            expiresAtMs = 0;
             stopCountdownTick();
             renderFloat();
         }
