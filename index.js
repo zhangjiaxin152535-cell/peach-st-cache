@@ -123,10 +123,58 @@ function isPeachRequestUrl(generate_data) {
     return ALLOWED_BASES.some((b) => lower === b.toLowerCase());
 }
 
-function warnNonPeach(force = false) {
-    if (!force && nonPeachWarned) return;
-    nonPeachWarned = true;
-    toast(NON_PEACH_MSG, 'warning');
+function notePeachRequestSeen() {
+    sessionSawPeach = true;
+    if (nonPeachPendingTimer) {
+        clearTimeout(nonPeachPendingTimer);
+        nonPeachPendingTimer = null;
+    }
+}
+
+/** 非桃子：延后；同一次连发里若出现桃子站则作废；本局只提醒一次 */
+function scheduleMaybeWarnNonPeach() {
+    if (nonPeachWarned || sessionSawPeach) return;
+    if (nonPeachPendingTimer) return;
+    nonPeachPendingTimer = setTimeout(() => {
+        nonPeachPendingTimer = null;
+        if (nonPeachWarned || sessionSawPeach) return;
+        nonPeachWarned = true;
+        toast(NON_PEACH_MSG, 'warning');
+    }, NON_PEACH_BURST_MS);
+}
+
+function loadApiKeyOverride() {
+    try {
+        return String(localStorage.getItem(API_KEY_OVERRIDE_KEY) || '').trim();
+    } catch {
+        return '';
+    }
+}
+
+function saveApiKeyOverride(raw) {
+    const v = String(raw || '').trim();
+    try {
+        if (v) localStorage.setItem(API_KEY_OVERRIDE_KEY, v);
+        else localStorage.removeItem(API_KEY_OVERRIDE_KEY);
+    } catch { /* ignore */ }
+    return v;
+}
+
+/** 酒馆当前自定义栏/密钥库里的 key（不含插件优先项） */
+async function getTavernCustomApiKey() {
+    try {
+        const fromInput = String($('#api_key_custom').val() || '').trim();
+        if (fromInput && fromInput.length >= 8 && !/[•●*]/.test(fromInput)) {
+            return fromInput;
+        }
+    } catch { /* ignore */ }
+    try {
+        const v = await findSecret(SECRET_KEYS.CUSTOM);
+        if (v && String(v).trim()) return String(v).trim();
+    } catch (e) {
+        console.warn('[peach-st-cache] findSecret failed', e);
+    }
+    return '';
 }
 
 function injectYamlLine(raw, line) {
@@ -206,22 +254,33 @@ function isInActiveChat() {
     return false;
 }
 
-/** 从酒馆密钥库取自定义源 API Key（仅补问缓存用） */
+/**
+ * 问缓存用密钥：插件里写了优先用；没写则与改钥匙前相同（酒馆自定义栏→密钥库）。
+ */
 async function getPeachApiKey() {
-    try {
-        const fromInput = String($('#api_key_custom').val() || '').trim();
-        // 排除遮罩占位
-        if (fromInput && fromInput.length >= 8 && !/[•●*]/.test(fromInput)) {
-            return fromInput;
-        }
-    } catch { /* ignore */ }
-    try {
-        const v = await findSecret(SECRET_KEYS.CUSTOM);
-        if (v && String(v).trim()) return String(v).trim();
-    } catch (e) {
-        console.warn('[peach-st-cache] findSecret failed', e);
+    const override = loadApiKeyOverride();
+    if (override) return override;
+    return getTavernCustomApiKey();
+}
+
+/**
+ * 插件写了优先密钥时：仅当本包会用的酒馆密钥与之一致才打标入库。
+ * 读不到酒馆密钥时不打标（避免误缓存其它 key）。
+ * 没写优先密钥：与改钥匙前相同，桃子站请求都打标。
+ */
+async function shouldMarkThisRequest() {
+    const override = loadApiKeyOverride();
+    if (!override) return true;
+    const tavern = await getTavernCustomApiKey();
+    if (!tavern) {
+        console.log('[peach-st-cache] skip mark: override set but tavern key unread');
+        return false;
     }
-    return '';
+    if (tavern !== override) {
+        console.log('[peach-st-cache] skip mark: tavern key ≠ plugin override');
+        return false;
+    }
+    return true;
 }
 
 /** 假断/刷新后续问「正在收」：有相认牌就每隔一会再问，直到收完或空 */
