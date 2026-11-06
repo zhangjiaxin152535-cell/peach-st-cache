@@ -167,9 +167,19 @@
     pointer-events: auto;
 }
 
-#peach-st-cache-float .peach-st-panel,
-#peach-st-cache-float .peach-st-panel * {
+#peach-st-cache-float .peach-st-panel {
     cursor: default;
+}
+
+#peach-st-cache-float .peach-st-key-btn,
+#peach-st-cache-float .peach-st-key-save,
+#peach-st-cache-float .peach-st-key-clear,
+#peach-st-cache-float .peach-st-key-input {
+    cursor: pointer;
+}
+
+#peach-st-cache-float .peach-st-key-input {
+    cursor: text;
 }
 
 #peach-st-cache-float.peach-st-open .peach-st-panel {
