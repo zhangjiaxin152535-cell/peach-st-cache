@@ -240,7 +240,6 @@ function schedulePendingPoll(reason = '', delayMs = 2000) {
  */
 async function pollCacheFromSub(reason = '') {
     if (cachePollInFlight) return;
-    if (!isPeachEndpoint()) return;
     // 本机生成流还在：主路径靠流里 peach_st_reclaim，不必抢问
     if (genState === GEN_RUNNING && !pendingWaitId) return;
     if (claimToken && lastSignal?.has_cache) {
@@ -338,11 +337,8 @@ function scheduleCachePoll(reason = '', delayMs = 800) {
     }, delayMs);
 }
 
+/** 仅在确认本包是桃子站之后写入设置（由发请求路径调用） */
 function ensureMarkersInSettings() {
-    if (!isPeachEndpoint()) {
-        stripMarkersFromSettings();
-        return false;
-    }
     const ctx = getContext();
     const settings = ctx.chatCompletionSettings;
     if (!settings) return false;
@@ -370,8 +366,8 @@ function stripMarkersFromSettings() {
 }
 
 /**
- * 步骤1+2：真正组好出站包时 — 只查本包 custom_url，再注入标记、发光。
- * 「非桃子站」只在这里报；启动/看连接面板不报。
+ * 步骤1+2：真正组好出站包时 — 唯一做站别判断的地方（本包 custom_url）。
+ * 非桃子：只 toast，不藏悬浮条、不动显隐。
  */
 function onChatCompletionSettingsReady(generate_data) {
     if (!generate_data || typeof generate_data !== 'object') return false;
@@ -379,7 +375,6 @@ function onChatCompletionSettingsReady(generate_data) {
     if (!isPeachRequestUrl(generate_data)) {
         warnNonPeach(true);
         waitingBackend = false;
-        hideFloatDom();
         return false;
     }
 
@@ -752,6 +747,9 @@ function ensureSettingsDrawer() {
     });
     $block.find('#peach_st_cache_reset_pos').on('click', () => {
         try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
+        saveFloatVisible(true);
+        updateWandMenuLabel();
+        renderFloat({ forceShow: true });
         const el = document.getElementById(FLOAT_ID);
         if (el) {
             el.style.left = 'auto';
