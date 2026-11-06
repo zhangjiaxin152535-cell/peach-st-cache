@@ -806,43 +806,131 @@ function bindFloatDrag(el) {
     });
 }
 
-function ensureSettingsDrawer() {
-    if ($('#peach_st_cache_settings').length) return;
-    const $host = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
-    if (!$host.length) return;
-    const $block = $(`
-        <div id="peach_st_cache_settings" class="peach-st-settings">
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>桃子取回</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content">
-                    <p class="peach-st-settings-hint">仅指定桃子站/本地8080。标记随请求体出发；中转计费后主动回传；魔法棒只显隐。</p>
-                    <div class="menu_button menu_button_icon" id="peach_st_cache_reset_pos">复位悬浮条位置</div>
+function keyEditorHtml(prefix) {
+    return `
+        <hr class="peach-st-key-sep" />
+        <div class="peach-st-key-block" data-peach-key-block="${prefix}">
+            <div class="peach-st-key-toggle-row">
+                <button type="button" class="peach-st-key-btn" aria-label="打开优先密钥填写口">🔑</button>
+            </div>
+            <div class="peach-st-key-editor" hidden>
+                <input type="password" class="peach-st-key-input text_pole" autocomplete="off" spellcheck="false" placeholder="优先密钥（可选）" />
+                <div class="peach-st-key-actions">
+                    <div class="menu_button menu_button_icon peach-st-key-save">保存</div>
+                    <div class="menu_button menu_button_icon peach-st-key-clear">清除</div>
                 </div>
             </div>
         </div>
-    `);
-    $host.append($block);
-    $block.find('.inline-drawer-toggle').on('click', function () {
-        $(this).closest('.inline-drawer').toggleClass('open');
+    `;
+}
+
+function syncKeyEditorInputs() {
+    const cur = loadApiKeyOverride();
+    $('.peach-st-key-input').each(function () {
+        if (document.activeElement === this) return;
+        this.value = cur;
     });
-    $block.find('#peach_st_cache_reset_pos').on('click', () => {
-        try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
-        saveFloatVisible(true);
-        updateWandMenuLabel();
-        renderFloat({ forceShow: true });
-        const el = document.getElementById(FLOAT_ID);
-        if (el) {
-            el.style.left = 'auto';
-            el.style.top = 'auto';
-            el.style.right = '';
-            el.style.bottom = '';
-            restoreOrDefaultPos(el);
+    $('.peach-st-key-btn').toggleClass('peach-st-key-set', !!cur);
+}
+
+function bindKeyBlock($root) {
+    if (!$root?.length || $root.data('peachKeyBound')) return;
+    $root.data('peachKeyBound', 1);
+    const $editor = $root.find('.peach-st-key-editor');
+    const $input = $root.find('.peach-st-key-input');
+    $root.find('.peach-st-key-btn').on('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const open = $editor.attr('hidden') != null;
+        if (open) {
+            $editor.removeAttr('hidden');
+            $input.val(loadApiKeyOverride());
+            try { $input.trigger('focus'); } catch { /* ignore */ }
+        } else {
+            $editor.attr('hidden', 'hidden');
         }
-        toast('已复位悬浮条位置', 'success');
     });
+    $root.find('.peach-st-key-save').on('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const saved = saveApiKeyOverride($input.val());
+        syncKeyEditorInputs();
+        $editor.attr('hidden', 'hidden');
+        toast(saved ? '已保存优先密钥：只服务这把 key' : '优先密钥为空，已改回酒馆自定义栏逻辑', 'success');
+    });
+    $root.find('.peach-st-key-clear').on('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        saveApiKeyOverride('');
+        $input.val('');
+        syncKeyEditorInputs();
+        toast('已清除优先密钥，改回酒馆自定义栏逻辑', 'info');
+    });
+    $input.on('keydown', (ev) => {
+        if (ev.key === 'Enter') {
+            ev.preventDefault();
+            $root.find('.peach-st-key-save').trigger('click');
+        }
+    });
+    syncKeyEditorInputs();
+}
+
+function ensureFloatKeyBlock($root) {
+    if (!$root?.length) return;
+    const $panel = $root.find('.peach-st-panel');
+    if (!$panel.length) return;
+    if (!$panel.find('[data-peach-key-block="float"]').length) {
+        $panel.append(keyEditorHtml('float'));
+    }
+    bindKeyBlock($panel.find('[data-peach-key-block="float"]'));
+}
+
+function ensureSettingsDrawer() {
+    const $host = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
+    if (!$host.length) return;
+
+    if (!$('#peach_st_cache_settings').length) {
+        const $block = $(`
+            <div id="peach_st_cache_settings" class="peach-st-settings">
+                <div class="inline-drawer">
+                    <div class="inline-drawer-toggle inline-drawer-header">
+                        <b>桃子取回</b>
+                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                    </div>
+                    <div class="inline-drawer-content">
+                        <p class="peach-st-settings-hint"></p>
+                        <div class="menu_button menu_button_icon" id="peach_st_cache_reset_pos">复位悬浮条位置</div>
+                    </div>
+                </div>
+            </div>
+        `);
+        $host.append($block);
+        $block.find('.inline-drawer-toggle').on('click', function () {
+            $(this).closest('.inline-drawer').toggleClass('open');
+        });
+        $block.find('#peach_st_cache_reset_pos').on('click', () => {
+            try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
+            saveFloatVisible(true);
+            updateWandMenuLabel();
+            renderFloat({ forceShow: true });
+            const el = document.getElementById(FLOAT_ID);
+            if (el) {
+                el.style.left = 'auto';
+                el.style.top = 'auto';
+                el.style.right = '';
+                el.style.bottom = '';
+                restoreOrDefaultPos(el);
+            }
+            toast('已复位悬浮条位置', 'success');
+        });
+    }
+
+    const $content = $('#peach_st_cache_settings .inline-drawer-content');
+    $content.find('.peach-st-settings-hint').text(SETTINGS_HINT);
+    if (!$content.find('[data-peach-key-block="settings"]').length) {
+        $content.append(keyEditorHtml('settings'));
+    }
+    bindKeyBlock($content.find('[data-peach-key-block="settings"]'));
 }
 
 function updateWandMenuLabel() {
