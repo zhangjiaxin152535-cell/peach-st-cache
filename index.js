@@ -861,16 +861,9 @@ function ensureSettingsDrawer() {
             }
             toast('已复位悬浮条位置', 'success');
         });
-        $block.find('#peach_st_cache_key_btn').on('click', () => {
-            const cur = loadApiKeyOverride();
-            const next = window.prompt(
-                '可选优先密钥（只影响问缓存/取回操作）。写了优先用这里；留空或点取消后清空则回退酒馆自定义栏。',
-                cur,
-            );
-            if (next === null) return;
-            const saved = saveApiKeyOverride(next);
-            updateKeyBtnState();
-            toast(saved ? '已保存优先密钥' : '已清除优先密钥，改用酒馆自定义栏', 'success');
+        $block.find('#peach_st_cache_key_btn').on('click', (ev) => {
+            ev.preventDefault();
+            promptApiKeyOverride();
         });
     }
 
@@ -884,16 +877,9 @@ function ensureSettingsDrawer() {
                     <button type="button" class="peach-st-key-btn" id="peach_st_cache_key_btn" aria-label="可选优先密钥">🔑</button>
                 </div>
             `);
-            $('#peach_st_cache_key_btn').on('click', () => {
-                const cur = loadApiKeyOverride();
-                const next = window.prompt(
-                    '可选优先密钥（只影响问缓存/取回操作）。写了优先用这里；留空或点取消后清空则回退酒馆自定义栏。',
-                    cur,
-                );
-                if (next === null) return;
-                const saved = saveApiKeyOverride(next);
-                updateKeyBtnState();
-                toast(saved ? '已保存优先密钥' : '已清除优先密钥，改用酒馆自定义栏', 'success');
+            $('#peach_st_cache_key_btn').on('click', (ev) => {
+                ev.preventDefault();
+                promptApiKeyOverride();
             });
         }
     }
@@ -962,6 +948,10 @@ function renderFloat({ forceShow = false } = {}) {
                         <span>⎘ <span class="peach-st-cache-read"></span></span>
                         <span>✎ <span class="peach-st-cache-create"></span></span>
                     </div>
+                    <hr class="peach-st-float-sep" />
+                    <div class="peach-st-float-key-row">
+                        <button type="button" class="peach-st-key-btn peach-st-float-key-btn" aria-label="可选优先密钥">🔑</button>
+                    </div>
                 </div>
             </div>
         `);
@@ -970,6 +960,11 @@ function renderFloat({ forceShow = false } = {}) {
         $root.find('.peach-st-ico-tao').attr('src', ICON_TAO);
         $root.find('.peach-st-ico-taohe').attr('src', ICON_TAOHE);
         $root.find('.peach-st-fist img').attr('src', ICON_FIST);
+        $root.find('.peach-st-float-key-btn').on('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            promptApiKeyOverride();
+        });
 
         // 桃子图标：生成中点击 = 与酒馆停止同权（发真中断令）
         $root.find('.peach-st-cost').on('click', (ev) => {
