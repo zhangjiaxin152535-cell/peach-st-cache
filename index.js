@@ -974,13 +974,9 @@ function ensureSettingsDrawer() {
             renderFloat({ forceShow: true });
             const el = document.getElementById(FLOAT_ID);
             if (el) {
-                el.style.left = 'auto';
-                el.style.top = 'auto';
-                el.style.right = '';
-                el.style.bottom = '';
-                restoreOrDefaultPos(el);
+                defaultCenterPos(el);
             }
-            toast('已复位悬浮条位置', 'success');
+            toast('已复位到屏幕正中', 'success');
         });
     }
 

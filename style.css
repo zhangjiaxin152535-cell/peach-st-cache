@@ -1,10 +1,12 @@
 /* 小巧横条，高度贴近输入区菜单/魔法棒一档 */
 #peach-st-cache-float {
     position: fixed;
-    left: auto;
-    top: auto;
-    right: 14px;
-    bottom: 92px;
+    /* 默认正中；JS 读到记忆位置或复位后会改成像素 left/top */
+    left: 50%;
+    top: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
     z-index: 11050;
     display: flex;
     flex-direction: column;
