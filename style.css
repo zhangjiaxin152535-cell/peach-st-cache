@@ -163,6 +163,13 @@
     backdrop-filter: blur(4px);
     cursor: default;
     touch-action: auto;
+    /* 展开面不参与整块拖拽/点按收起 */
+    pointer-events: auto;
+}
+
+#peach-st-cache-float .peach-st-panel,
+#peach-st-cache-float .peach-st-panel * {
+    cursor: default;
 }
 
 #peach-st-cache-float.peach-st-open .peach-st-panel {
