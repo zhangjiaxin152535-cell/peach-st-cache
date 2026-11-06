@@ -731,7 +731,15 @@ function applyPos(el, left, top) {
     el.style.top = `${c.top}px`;
     el.style.right = 'auto';
     el.style.bottom = 'auto';
+    el.style.transform = 'none';
     return c;
+}
+
+/** 无记忆位置时：屏幕正中（水平+垂直居中） */
+function defaultCenterPos(el) {
+    const w = el.offsetWidth || 120;
+    const h = el.offsetHeight || 32;
+    return applyPos(el, (window.innerWidth - w) / 2, (window.innerHeight - h) / 2);
 }
 
 function restoreOrDefaultPos(el) {
@@ -740,13 +748,8 @@ function restoreOrDefaultPos(el) {
         applyPos(el, saved.left, saved.top);
         return;
     }
-    el.style.left = 'auto';
-    el.style.top = 'auto';
-    el.style.right = '';
-    el.style.bottom = '';
     requestAnimationFrame(() => {
-        const r = el.getBoundingClientRect();
-        applyPos(el, r.left, r.top);
+        defaultCenterPos(el);
     });
 }
 
