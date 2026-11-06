@@ -113,23 +113,35 @@ function normalizeBaseUrl(raw) {
 }
 
 /**
- * 浏览器可直连的中转根。
- * 发信/计费可走酒馆服务器 → http://sub2api:8080（容器内网）；
- * 点拳取回/补问/中断是浏览器自己 fetch，打不到 sub2api，须改打公网 54bbm。
+ * 小桃子取货根地址（claim / 补问 / 真中断）：浏览器直连。
+ * 自定义 URL 可写内网 sub2api，发信仍由酒馆服务器转发；
+ * 取缓存不论配置写了四个名里的哪一个，都归一到：
+ * - 线上族 → 公网 54bbm（与 sub2api 同一台线上 sub）
+ * - 本机族 → 127.0.0.1:8080（与 localhost 同一台本地 sub）
  */
-function browserReachablePeachBase(rawOrBase) {
+function reclaimPeachBase(rawOrBase) {
     const base = normalizeBaseUrl(rawOrBase);
     if (!base) return '';
     const lower = base.toLowerCase();
     if (
-        lower === 'http://sub2api:8080'
+        lower === 'http://127.0.0.1:8080'
+        || lower === 'http://localhost:8080'
+        || lower === 'https://127.0.0.1:8080'
+        || lower === 'https://localhost:8080'
+    ) {
+        return PEACH_LOCAL_BASE;
+    }
+    if (
+        lower === PEACH_PUBLIC_BASE.toLowerCase()
+        || lower === 'http://sub2api:8080'
         || lower === 'https://sub2api:8080'
+        || lower.includes('://sub2api:')
         || lower.startsWith('http://sub2api/')
         || lower.startsWith('https://sub2api/')
-        || lower.includes('://sub2api:')
     ) {
-        return 'https://54bbm.54-bbm.win';
+        return PEACH_PUBLIC_BASE;
     }
+    // 其它已在白名单外的不应走到取货；兜底原样
     return base;
 }
 
@@ -139,10 +151,10 @@ function getCustomEndpoint() {
     const rawUrl = String(settings.custom_url || '').trim();
     return {
         source: settings.chat_completion_source,
-        /** 浏览器侧取回/补问/中断用（sub2api 会改写成 54bbm） */
-        baseUrl: browserReachablePeachBase(rawUrl),
+        /** 浏览器取货/补问/中断：归一到公网或本机环回 */
+        baseUrl: reclaimPeachBase(rawUrl),
         rawUrl,
-        /** 配置里原始根（可能是容器内网名） */
+        /** 配置原文根（可含 sub2api，仅供对照） */
         serverBase: normalizeBaseUrl(rawUrl),
     };
 }
