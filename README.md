@@ -29,28 +29,37 @@ git clone <本仓库> <任意酒馆>/public/scripts/extensions/third-party/peach
 
 ## 使用前提
 
-1. 聊天补全来源选 **Custom（OpenAI 兼容）**。
-2. 自定义地址填中转根地址（可带或不带 `/v1`）。
+1. 聊天补全来源选 **Custom（OpenAI 兼容）**（官方酒馆自带，无需改酒馆源码）。
+2. 自定义地址指向**已部署取回接口**的中转（可带或不带 `/v1`）。插件认作「桃子站」的根地址：
+   - `https://54bbm.54-bbm.win`
+   - `http://127.0.0.1:8080` / `http://localhost:8080`（本机）
+   - `http://sub2api:8080`（线上酒馆容器访问中转的内网名；带 `/v1` 亦可）
 3. 已保存对应 API Key。
-4. 中转已部署带 `/v1/peach-st/cache` 的版本。
-5. 酒馆 `config.yaml` 中 `allowKeysExposure: true`（扩展需读密钥直连中转轮询；由部署方决定是否开启）。
+4. 中转（sub2api）已部署带 `/v1/peach-st/*` 的版本——**暗号与缓存逻辑在中转 + 本插件**，不在酒馆本体。
+5. 若要用「假断后续问缓存」，部署方宜开启酒馆 `allowKeysExposure: true`（扩展读密钥直连中转；官方配置项，非改源码）。仅凭流里主动回传时，主路径可不依赖读密钥。
+
+## 与酒馆本体的关系
+
+- **不依赖**你们私改的本地酒馆补丁（域名拆分、会员闸、美化等）。装进任意能跑第三方扩展的官方 SillyTavern 即可加载。
+- **依赖**的是：① 标准扩展 API（`st-context` / 事件 / `saveReply` 等）；② 对端中转认识本插件发出的标记并提供取回接口。
+- 未装本插件时：不写标记头、不调取回接口；中转也不会给普通流量开取回缓存。
 
 ## 行为
 
 | 动作 | 效果 |
 |------|------|
-| 启用扩展 | 运行时往自定义「附加请求头」内存写入 `X-Peach-ST-Client: 1`（不主动写入设置文件） |
-| 发送请求 | 中转识别该头 → 计费成功写 120s 缓存；再次发送销毁旧缓存 |
+| 启用扩展 | 运行时往自定义「附加请求体/头」注入 `peach_st_client` / `X-Peach-ST-Client`（内存为主） |
+| 发送请求 | 中转识别标记 → 计费成功写约 120s 缓存；流末可推 `peach_st_reclaim` |
 | 空闲 | 桃子图标 |
-| 有缓存 | 握拳 + 倒计时 + `提示词token+回复token` |
-| 点击握拳 | `POST .../claim`；末条 AI 为空/失败则覆盖，否则新建并保存聊天 |
+| 有缓存 | 握拳 + 倒计时 + token 栏 |
+| 点击握拳 | 凭票取回；拆半截楼后 `saveReply` 正规入泡（可带思考） |
 
-## 中转接口
+## 中转接口（对端必须有；不属于酒馆）
 
-均需 `Authorization: Bearer <api_key>`：
-
-- `GET /v1/peach-st/cache` — 状态；无缓存 `204`
-- `POST /v1/peach-st/cache/claim` — 一次性取回全文
+- `GET /v1/peach-st/cache` — 三态（空/正在收/收完）；宜带密钥
+- `POST /v1/peach-st/cache/claim` — 按密钥取回
+- `POST /v1/peach-st/cache/claim-by-token` — 凭票取回（可不带密钥）
+- `POST /v1/peach-st/abort` — 真中断令（`peach_st_request_id`）
 - `DELETE /v1/peach-st/cache` — 丢弃
 
 ## 合格标准自检
