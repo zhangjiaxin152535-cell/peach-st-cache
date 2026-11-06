@@ -102,11 +102,22 @@ function getCustomEndpoint() {
     };
 }
 
-/** 步骤1：是否两个指定 URL 之一 */
+/** 配置是否像桃子（只供显隐/补问；绝不由此弹「非桃子站」） */
 function isPeachEndpoint() {
-    const { source, baseUrl } = getCustomEndpoint();
-    if (source !== 'custom' || !baseUrl) return false;
+    const { baseUrl } = getCustomEndpoint();
+    if (!baseUrl) return false;
     const lower = baseUrl.toLowerCase();
+    return ALLOWED_BASES.some((b) => lower === b.toLowerCase());
+}
+
+/**
+ * 发请求时专用：只看本包携带的 custom_url（出站目标地址）。
+ * 不看连接面板、不退回配置、不看 source。
+ */
+function isPeachRequestUrl(generate_data) {
+    const raw = String(generate_data?.custom_url || '').trim();
+    if (!raw) return false;
+    const lower = normalizeBaseUrl(raw).toLowerCase();
     return ALLOWED_BASES.some((b) => lower === b.toLowerCase());
 }
 
@@ -367,13 +378,13 @@ function stripMarkersFromSettings() {
 }
 
 /**
- * 步骤1+2：真正组好出站包时 — 校验 URL、注入标记、发光。
- * 不是「点发送」本身，而是 CHAT_COMPLETION_SETTINGS_READY。
+ * 步骤1+2：真正组好出站包时 — 只查本包 custom_url，再注入标记、发光。
+ * 「非桃子站」只在这里报；启动/看连接面板不报。
  */
 function onChatCompletionSettingsReady(generate_data) {
     if (!generate_data || typeof generate_data !== 'object') return false;
 
-    if (!isPeachEndpoint()) {
+    if (!isPeachRequestUrl(generate_data)) {
         warnNonPeach(true);
         waitingBackend = false;
         hideFloatDom();
@@ -382,7 +393,7 @@ function onChatCompletionSettingsReady(generate_data) {
 
     if (!urlOkLogged) {
         urlOkLogged = true;
-        console.log('[peach-st-cache] step1 url ok', getCustomEndpoint().baseUrl);
+        console.log('[peach-st-cache] step1 url ok', normalizeBaseUrl(generate_data.custom_url));
     }
 
     // 步骤2：标记 + 本轮请求号随请求体出发（中转剥掉；假断不发中断令）
@@ -780,10 +791,7 @@ function ensureWandMenuButton() {
         </div>
     `);
     $item.on('click', () => {
-        if (!isPeachEndpoint()) {
-            warnNonPeach(true);
-            return;
-        }
+        // 魔术棒只显隐；「非桃子站」留给发请求时查本包地址
         saveFloatVisible(!floatVisible);
         updateWandMenuLabel();
         renderFloat({ forceShow: true });
@@ -899,12 +907,16 @@ function renderFloat({ forceShow = false } = {}) {
 }
 
 /**
- * 入泡：对齐酒馆 macros 口径找「最后一条用户」楼层，AI 必须在下一层。
- * - 有下一层且是角色泡 → 覆盖该层（末条用 appendFinal；非末条改 mes + updateMessageBlock）
- * - 没有下一层 → saveReply normal 新建
- * 最初版是「空/失败 AI 末条才覆盖，否则新建」，完整 AI 再取回会叠楼（见 #27+#28）；本规则按用户楼层+1 修。
+ * 入泡：送到酒馆「门口」走正规建楼，不自己解析思考。
+ *
+ * 根因：appendFinal 里是 extra.reasoning +=（往旧思考后面拼），流式留下的半截思考
+ * 不会被换掉，思考区铅笔改的也是同一份 extra.reasoning。
+ *
+ * 正经路：找最后用户楼；下一层若是 AI（半截/旧楼）先删掉腾门口；
+ * 再 saveReply({ type:'normal', reasoning })——与非流入泡同一套赋值+渲染。
+ * 仅当 AI 不在末尾（中间夹楼）时才原地改字段并 updateReasoningUI。
  */
-async function applyClaimedText(text) {
+async function applyClaimedText(text, reasoning) {
     const ctx = getContext();
     const chat = ctx.chat;
     if (!Array.isArray(chat)) {
@@ -916,6 +928,8 @@ async function applyClaimedText(text) {
         toast('取回内容为空', 'warning');
         return false;
     }
+    // 思考链：中转原样送来，交给酒馆 saveReply / 思考 UI，不在这里拆标签
+    const reasoningText = String(reasoning || '').trim();
     if (typeof ctx.saveReply !== 'function') {
         toast('当前酒馆版本不支持正规入泡', 'error');
         return false;
@@ -933,29 +947,47 @@ async function applyClaimedText(text) {
     }
     const aiIdx = userIdx >= 0 ? userIdx + 1 : -1;
     const aiAtNext = aiIdx >= 0 && aiIdx < chat.length && isCharMsg(chat[aiIdx]);
+    const aiIsLast = aiAtNext && aiIdx === chat.length - 1;
     console.log('[peach-st-cache] claim bubble decide', {
         userIdx,
         aiIdx,
         aiAtNext,
+        aiIsLast,
         chatLen: chat.length,
+        hasReasoning: !!reasoningText,
         branch: aiAtNext
-            ? (aiIdx === chat.length - 1 ? 'appendFinal' : 'patchFloor')
+            ? (aiIsLast ? 'deleteThenNormal' : 'patchFloor+reasoningUI')
             : 'normal',
     });
     try {
-        if (aiAtNext && aiIdx === chat.length - 1) {
-            // 用户下一层 AI 正好是末条 → 酒馆正规覆盖写回
-            await ctx.saveReply({ type: 'appendFinal', getMessage: trimmed });
-            toast('已覆盖最后一条 AI 回复', 'success');
+        if (aiAtNext && aiIsLast) {
+            // 半截/旧 AI 在末尾：先拆楼腾门口，再走 normal（赋值 reasoning，不是 +=）
+            if (typeof ctx.deleteLastMessage === 'function') {
+                await ctx.deleteLastMessage();
+            } else if (typeof ctx.deleteMessage === 'function') {
+                await ctx.deleteMessage(aiIdx, undefined, false, true);
+            } else {
+                chat.pop();
+            }
+            await ctx.saveReply({ type: 'normal', getMessage: trimmed, reasoning: reasoningText });
+            toast('已取回并正规写入（含思考）', 'success');
         } else if (aiAtNext) {
-            // 下一层有 AI，但后面还有消息：只改那一层，不动末条用户
+            // 中间夹楼：normal 只能建在末尾，只能原地换正文+思考并刷 UI
             chat[aiIdx].mes = trimmed;
+            if (!chat[aiIdx].extra || typeof chat[aiIdx].extra !== 'object') {
+                chat[aiIdx].extra = {};
+            }
+            chat[aiIdx].extra.reasoning = reasoningText;
             if (typeof ctx.updateMessageBlock === 'function') {
                 ctx.updateMessageBlock(aiIdx, chat[aiIdx]);
             }
-            toast('已覆盖对应用户后的 AI 楼层', 'success');
+            if (typeof ctx.updateReasoningUI === 'function') {
+                ctx.updateReasoningUI(aiIdx, { reset: true });
+            }
+            toast('已覆盖中间 AI 楼层（含思考）', 'success');
         } else {
-            await ctx.saveReply({ type: 'normal', getMessage: trimmed });
+            // 用户下一层空着：门口正规建楼
+            await ctx.saveReply({ type: 'normal', getMessage: trimmed, reasoning: reasoningText });
             toast('已新建 AI 回复（取回）', 'success');
         }
         if (typeof ctx.saveChat === 'function') await ctx.saveChat();
@@ -1000,7 +1032,7 @@ async function onClaimClick() {
             toast('取回内容为空', 'warning');
             return;
         }
-        await applyClaimedText(body.text);
+        await applyClaimedText(body.text, body.reasoning);
         // 取回不毁：票与倒计时保留至 TTL / 新标记消息
         toast('已取回写入气泡（缓存仍保留至倒计时结束）', 'success');
         panelOpen = false;
@@ -1074,7 +1106,7 @@ function init() {
     } else {
         stripMarkersFromSettings();
         hideFloatDom();
-        setTimeout(() => warnNonPeach(), 1200);
+        // 启动不报「非桃子站」——等发请求时查本包 custom_url
     }
 
     setTimeout(ensureSettingsDrawer, 1500);
