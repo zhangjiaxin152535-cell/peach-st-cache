@@ -422,10 +422,13 @@ function onChatCompletionSettingsReady(generate_data) {
     if (!generate_data || typeof generate_data !== 'object') return false;
 
     if (!isPeachRequestUrl(generate_data)) {
-        warnNonPeach(true);
+        // 可能同一次发送稍后还有桃子站请求：延后、且本局只提醒一次
+        scheduleMaybeWarnNonPeach();
         waitingBackend = false;
         return false;
     }
+
+    notePeachRequestSeen();
 
     if (!urlOkLogged) {
         urlOkLogged = true;
@@ -772,43 +775,95 @@ function bindFloatDrag(el) {
     });
 }
 
+function updateKeyBtnState() {
+    const $btn = $('#peach_st_cache_key_btn');
+    if (!$btn.length) return;
+    const has = !!loadApiKeyOverride();
+    $btn.toggleClass('peach-st-key-set', has);
+    $btn.attr('title', has
+        ? '已设优先密钥（点此修改；清空则回退酒馆自定义栏）'
+        : '可选：填写后优先用此密钥问缓存；空则用酒馆自定义栏');
+}
+
 function ensureSettingsDrawer() {
-    if ($('#peach_st_cache_settings').length) return;
     const $host = $('#extensions_settings2').length ? $('#extensions_settings2') : $('#extensions_settings');
     if (!$host.length) return;
-    const $block = $(`
-        <div id="peach_st_cache_settings" class="peach-st-settings">
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>桃子取回</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                </div>
-                <div class="inline-drawer-content">
-                    <p class="peach-st-settings-hint">仅指定桃子站/本地8080。标记随请求体出发；中转计费后主动回传；魔法棒只显隐。</p>
-                    <div class="menu_button menu_button_icon" id="peach_st_cache_reset_pos">复位悬浮条位置</div>
+
+    if (!$('#peach_st_cache_settings').length) {
+        const $block = $(`
+            <div id="peach_st_cache_settings" class="peach-st-settings">
+                <div class="inline-drawer">
+                    <div class="inline-drawer-toggle inline-drawer-header">
+                        <b>桃子取回</b>
+                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                    </div>
+                    <div class="inline-drawer-content">
+                        <p class="peach-st-settings-hint"></p>
+                        <div class="menu_button menu_button_icon" id="peach_st_cache_reset_pos">复位悬浮条位置</div>
+                        <hr class="peach-st-settings-sep" />
+                        <div class="peach-st-settings-key-row">
+                            <button type="button" class="peach-st-key-btn" id="peach_st_cache_key_btn" aria-label="可选优先密钥">🔑</button>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
-    `);
-    $host.append($block);
-    $block.find('.inline-drawer-toggle').on('click', function () {
-        $(this).closest('.inline-drawer').toggleClass('open');
-    });
-    $block.find('#peach_st_cache_reset_pos').on('click', () => {
-        try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
-        saveFloatVisible(true);
-        updateWandMenuLabel();
-        renderFloat({ forceShow: true });
-        const el = document.getElementById(FLOAT_ID);
-        if (el) {
-            el.style.left = 'auto';
-            el.style.top = 'auto';
-            el.style.right = '';
-            el.style.bottom = '';
-            restoreOrDefaultPos(el);
+        `);
+        $host.append($block);
+        $block.find('.inline-drawer-toggle').on('click', function () {
+            $(this).closest('.inline-drawer').toggleClass('open');
+        });
+        $block.find('#peach_st_cache_reset_pos').on('click', () => {
+            try { localStorage.removeItem(POS_KEY); } catch { /* ignore */ }
+            saveFloatVisible(true);
+            updateWandMenuLabel();
+            renderFloat({ forceShow: true });
+            const el = document.getElementById(FLOAT_ID);
+            if (el) {
+                el.style.left = 'auto';
+                el.style.top = 'auto';
+                el.style.right = '';
+                el.style.bottom = '';
+                restoreOrDefaultPos(el);
+            }
+            toast('已复位悬浮条位置', 'success');
+        });
+        $block.find('#peach_st_cache_key_btn').on('click', () => {
+            const cur = loadApiKeyOverride();
+            const next = window.prompt(
+                '可选优先密钥（只影响问缓存/取回操作）。写了优先用这里；留空或点取消后清空则回退酒馆自定义栏。',
+                cur,
+            );
+            if (next === null) return;
+            const saved = saveApiKeyOverride(next);
+            updateKeyBtnState();
+            toast(saved ? '已保存优先密钥' : '已清除优先密钥，改用酒馆自定义栏', 'success');
+        });
+    }
+
+    $('#peach_st_cache_settings .peach-st-settings-hint').text(SETTINGS_HINT);
+    if (!$('#peach_st_cache_key_btn').length) {
+        const $content = $('#peach_st_cache_settings .inline-drawer-content');
+        if ($content.length && !$content.find('.peach-st-settings-sep').length) {
+            $content.append(`
+                <hr class="peach-st-settings-sep" />
+                <div class="peach-st-settings-key-row">
+                    <button type="button" class="peach-st-key-btn" id="peach_st_cache_key_btn" aria-label="可选优先密钥">🔑</button>
+                </div>
+            `);
+            $('#peach_st_cache_key_btn').on('click', () => {
+                const cur = loadApiKeyOverride();
+                const next = window.prompt(
+                    '可选优先密钥（只影响问缓存/取回操作）。写了优先用这里；留空或点取消后清空则回退酒馆自定义栏。',
+                    cur,
+                );
+                if (next === null) return;
+                const saved = saveApiKeyOverride(next);
+                updateKeyBtnState();
+                toast(saved ? '已保存优先密钥' : '已清除优先密钥，改用酒馆自定义栏', 'success');
+            });
         }
-        toast('已复位悬浮条位置', 'success');
-    });
+    }
+    updateKeyBtnState();
 }
 
 function updateWandMenuLabel() {
