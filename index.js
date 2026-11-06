@@ -797,11 +797,7 @@ function hideFloatDom() {
 }
 
 function renderFloat({ forceShow = false } = {}) {
-    if (!isPeachEndpoint()) {
-        hideFloatDom();
-        return;
-    }
-
+    // 显隐只看用户开关；绝不因「像不像桃子站」拆掉药
     let $root = $(`#${FLOAT_ID}`);
     if (!$root.length) {
         $root = $(`
@@ -1056,8 +1052,6 @@ function bindHooks() {
     // 进角色/换聊天后再补问缓存（不抢 APP 启动）
     if (et.CHAT_CHANGED) {
         es.on(et.CHAT_CHANGED, () => {
-            if (!isPeachEndpoint()) return;
-            ensureMarkersInSettings();
             renderFloat({ forceShow: true });
             scheduleCachePoll('chat_changed', 600);
         });
@@ -1068,16 +1062,10 @@ function bindHooks() {
         });
     }
 
+    // 换源/换模：只刷新条，不做站别判断、不拆药
     const recheck = () => {
-        if (isPeachEndpoint()) {
-            ensureMarkersInSettings();
-            renderFloat({ forceShow: true });
-            scheduleCachePoll('endpoint_recheck', 900);
-        } else {
-            waitingBackend = false;
-            stripMarkersFromSettings();
-            hideFloatDom();
-        }
+        renderFloat({ forceShow: true });
+        scheduleCachePoll('endpoint_recheck', 900);
     };
     if (et.CHATCOMPLETION_SOURCE_CHANGED) es.on(et.CHATCOMPLETION_SOURCE_CHANGED, recheck);
     if (et.CHATCOMPLETION_MODEL_CHANGED) es.on(et.CHATCOMPLETION_MODEL_CHANGED, recheck);
@@ -1088,22 +1076,13 @@ function init() {
     ensureSettingsDrawer();
     ensureWandMenuButton();
     bindHooks();
-
-    if (isPeachEndpoint()) {
-        ensureMarkersInSettings();
-        renderFloat();
-        // 不在这里立刻 poll：等 APP_READY / CHAT_CHANGED，避免和酒馆启动抢带宽
-    } else {
-        stripMarkersFromSettings();
-        hideFloatDom();
-        // 启动不报「非桃子站」——等发请求时查本包 custom_url
-    }
+    // 启动只画悬浮条；站别判断留给发请求
+    renderFloat();
 
     setTimeout(ensureSettingsDrawer, 1500);
     setTimeout(ensureWandMenuButton, 1500);
     setTimeout(ensureWandMenuButton, 4000);
     setTimeout(bindHooks, 2000);
-    setTimeout(ensureMarkersInSettings, 2000);
     // 若扩展晚于 APP_READY 加载：稍后再试一次（仍要求已在角色里）
     setTimeout(() => scheduleCachePoll('late_init', 2500), 2500);
 
