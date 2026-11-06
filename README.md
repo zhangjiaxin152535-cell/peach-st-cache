@@ -19,42 +19,6 @@
 本工作区源码目录：`silly/桃子取回`（与美化、社区同级的**独立插件源**）。  
 **禁止**把开发主副本放进 `SillyTavern/public/scripts/extensions/third-party/` 并提交进酒馆本体仓库；那个路径只应出现「用户安装结果」。
 
-<<<<<<< HEAD
-=======
-本地自测可临时：
-
-```text
-git clone <本仓库> <任意酒馆>/public/scripts/extensions/third-party/peach-st-cache
-```
-
-测完可整夹删除，酒馆应恢复为零痕迹。
-
-## 使用前提
-
-1. 聊天补全来源选 **Custom（OpenAI 兼容）**。
-2. 自定义地址填中转根地址（可带或不带 `/v1`）。
-3. 已保存对应 API Key。
-4. 中转已部署带 `/v1/peach-st/cache` 的版本。
-5. 酒馆 `config.yaml` 中 `allowKeysExposure: true`（扩展需读密钥直连中转轮询；由部署方决定是否开启）。
-
-## 行为
-
-| 动作 | 效果 |
-|------|------|
-| 启用扩展 | 运行时往自定义「附加请求头」内存写入 `X-Peach-ST-Client: 1`（不主动写入设置文件） |
-| 发送请求 | 中转识别该头 → 计费成功写 120s 缓存；再次发送销毁旧缓存 |
-| 空闲 | 桃子图标 |
-| 有缓存 | 握拳 + 倒计时 + `提示词token+回复token` |
-| 点击握拳 | `POST .../claim`；末条 AI 为空/失败则覆盖，否则新建并保存聊天 |
-
-## 中转接口
-
-均需 `Authorization: Bearer <api_key>`：
-
-- `GET /v1/peach-st/cache` — 状态；无缓存 `204`
-- `POST /v1/peach-st/cache/claim` — 一次性取回全文
-- `DELETE /v1/peach-st/cache` — 丢弃
->>>>>>> 067a951 (chore(桃子取回): auto-save 2026-11-06 19:07:51 (README.md, index.js, manifest.json, "\346\211\247\350\241\214\347\233\256\345\275\225.md"))
 
 ## 合格标准自检
 
