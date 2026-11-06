@@ -225,6 +225,47 @@
     margin: 0.4em 0 0.8em;
 }
 
+#peach_st_cache_settings .peach-st-settings-sep {
+    border: none;
+    border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+    margin: 0.9em 0 0.75em;
+    opacity: 0.9;
+}
+
+#peach_st_cache_settings .peach-st-settings-key-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0.15em 0 0.35em;
+}
+
+#peach_st_cache_settings .peach-st-key-btn {
+    appearance: none;
+    border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    border-radius: 999px;
+    width: 2.4em;
+    height: 2.4em;
+    line-height: 1;
+    font-size: 1.15em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    opacity: 0.88;
+}
+
+#peach_st_cache_settings .peach-st-key-btn:hover {
+    opacity: 1;
+}
+
+#peach_st_cache_settings .peach-st-key-btn.peach-st-key-set {
+    border-color: color-mix(in srgb, #e8a070 55%, currentColor);
+    box-shadow: 0 0 0 1px color-mix(in srgb, #e8a070 35%, transparent);
+    opacity: 1;
+}
+
 #peach_st_cache_menu_item .peach-st-menu-emoji {
     font-size: 1.05em;
     line-height: 1;
