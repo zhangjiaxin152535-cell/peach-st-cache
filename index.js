@@ -1037,6 +1037,7 @@ function renderFloat({ forceShow = false } = {}) {
     } else if (forceShow) {
         $root.css('display', '');
     }
+    ensureFloatKeyBlock($root);
 
     const ready = !!(lastSignal && lastSignal.has_cache && claimToken);
     const costTxt = lastSignal ? formatAmount(lastSignal.actual_cost, { signed: true }) : '';
