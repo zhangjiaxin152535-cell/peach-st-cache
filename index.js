@@ -112,12 +112,16 @@ function normalizeBaseUrl(raw) {
     return u;
 }
 
-function isLocalTavernPage() {
-    const h = String(location.hostname || '').toLowerCase();
-    return h === '127.0.0.1' || h === 'localhost';
+function isLocalSubBase(lower) {
+    return (
+        lower === 'http://127.0.0.1:8080'
+        || lower === 'http://localhost:8080'
+        || lower === 'https://127.0.0.1:8080'
+        || lower === 'https://localhost:8080'
+    );
 }
 
-function isPeachFamilyBase(lower) {
+function isOnlineSubBase(lower) {
     return (
         lower === PEACH_PUBLIC_BASE.toLowerCase()
         || lower === 'http://sub2api:8080'
@@ -125,30 +129,25 @@ function isPeachFamilyBase(lower) {
         || lower.includes('://sub2api:')
         || lower.startsWith('http://sub2api/')
         || lower.startsWith('https://sub2api/')
-        || lower === 'http://127.0.0.1:8080'
-        || lower === 'http://localhost:8080'
-        || lower === 'https://127.0.0.1:8080'
-        || lower === 'https://localhost:8080'
     );
 }
 
+function isPeachFamilyBase(lower) {
+    return isLocalSubBase(lower) || isOnlineSubBase(lower);
+}
+
 /**
- * 小桃子取货根地址（claim / 补问 / 真中断）：浏览器直连。
- * 发信可由酒馆服务器走内网 sub2api；取货必须跟「当前打开的是哪边酒馆」对齐：
- * - 本机页（127/localhost）→ 永远打本机 8080（避免 VIP 锁成 sub2api 却去公网取空）
- * - 线上页 → 公网 54bbm（浏览器进不去容器名 sub2api）
+ * 小桃子取货根地址（claim / 补问 / 真中断）：跟「这次发请求的域名」走，不看酒馆页开在哪。
+ * - 本机 8080 / localhost:8080 → 从本机缓存仓取
+ * - 公网 54bbm 或线上对内 sub2api:8080 → 从线上公网仓取（浏览器进不去容器名，归一到 54bbm）
  */
 function reclaimPeachBase(rawOrBase) {
     const base = normalizeBaseUrl(rawOrBase);
     if (!base) return '';
     const lower = base.toLowerCase();
-    if (!isPeachFamilyBase(lower)) {
-        return base;
-    }
-    if (isLocalTavernPage()) {
-        return PEACH_LOCAL_BASE;
-    }
-    return PEACH_PUBLIC_BASE;
+    if (isLocalSubBase(lower)) return PEACH_LOCAL_BASE;
+    if (isOnlineSubBase(lower)) return PEACH_PUBLIC_BASE;
+    return base;
 }
 
 function getCustomEndpoint() {
@@ -157,7 +156,7 @@ function getCustomEndpoint() {
     const rawUrl = String(settings.custom_url || '').trim();
     return {
         source: settings.chat_completion_source,
-        /** 浏览器取货/补问/中断：归一到公网或本机环回 */
+        /** 浏览器取货/补问/中断：按请求域名归一到本机 8080 或公网 54bbm */
         baseUrl: reclaimPeachBase(rawUrl),
         rawUrl,
         /** 配置原文根（可含 sub2api，仅供对照） */
