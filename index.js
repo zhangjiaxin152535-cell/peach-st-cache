@@ -285,9 +285,11 @@ async function sendTrueAbort() {
 }
 
 function onUserStopGeneration() {
-    // 真中断：先发令再清本地态；没发令（例如卸扩展）中转不会停
+    // 真中断：先发令；仓库应变 failed，再问库灭灯+提示。刷新/卸载不会走这里。
     void sendTrueAbort();
     setGenState(GEN_IDLE);
+    waitingBackend = true;
+    scheduleCachePoll('user_stop', 500);
 }
 
 function onGenerationEndedNormally() {
@@ -357,14 +359,11 @@ function schedulePendingPoll(reason = '', delayMs = 2000) {
 }
 
 /**
- * 刷新/重进后：带密钥问中转三态——空 / 正在收 / 收完可取回。
- * 不抢启动——由 scheduleCachePoll 在就绪/进角色后调用。
- * 正在收：拿 request_id 当号码牌，发光续问；收完：走 onReclaimSignal 亮手。
+ * 只信取回仓库四态：空 / 正在收 / 收完可取 / 失败。
+ * 酒馆是否还在生成、流是否还开着，都不挡问库。
  */
 async function pollCacheFromSub(reason = '') {
     if (cachePollInFlight) return;
-    // 本机生成流还在：主路径靠流里 peach_st_reclaim，不必抢问
-    if (genState === GEN_RUNNING && !pendingWaitId) return;
     if (claimToken && lastSignal?.has_cache) {
         stopPendingPoll();
         return;
@@ -389,13 +388,24 @@ async function pollCacheFromSub(reason = '') {
         });
         if (!res.ok) {
             console.warn('[peach-st-cache] cache poll http', res.status, reason);
+            // 问库本身失败：若已在等本轮，继续隔一会再问，不灭灯抢断
+            if (pendingWaitId || waitingBackend) schedulePendingPoll(reason, 3000);
             return;
         }
         const st = await res.json();
+        // 正式失败
+        if (st?.failed) {
+            onReclaimSignal({
+                failed: true,
+                error_message: st.error_message || '取回失败',
+                request_id: st.request_id,
+                has_cache: false,
+            });
+            console.log('[peach-st-cache] cache poll failed state', reason, st.error_message);
+            return;
+        }
         // 收完
         if (st?.has_cache && String(st.claim_token || '').trim()) {
-            pendingWaitId = '';
-            stopPendingPoll();
             onReclaimSignal({
                 has_cache: true,
                 claim_token: st.claim_token,
@@ -417,17 +427,19 @@ async function pollCacheFromSub(reason = '') {
         }
         // 正在收：号码牌 + 发光 + 续问
         if (st?.pending) {
-            pendingWaitId = String(st.request_id || pendingWaitId || '').trim();
+            pendingWaitId = String(st.request_id || pendingWaitId || activeRequestId || '').trim();
             waitingBackend = true;
-            setGenState(GEN_IDLE);
             renderFloat();
-            console.log('[peach-st-cache] cache poll pending plate', pendingWaitId.slice(0, 8), reason);
+            console.log('[peach-st-cache] cache poll pending plate', String(pendingWaitId).slice(0, 8), reason);
             schedulePendingPoll(reason, 2000);
             return;
         }
-        // 空
-        if (pendingWaitId) {
-            console.log('[peach-st-cache] cache poll idle after wait', reason);
+        // 空：若本轮刚发出、还在等（酒馆可能还没打进中转），短间隔再问几次
+        if (waitingBackend || pendingWaitId || activeRequestId) {
+            if (!pendingWaitId && activeRequestId) pendingWaitId = String(activeRequestId);
+            console.log('[peach-st-cache] cache poll empty while waiting', reason);
+            schedulePendingPoll(reason, 2000);
+            return;
         }
         pendingWaitId = '';
         stopPendingPoll();
@@ -438,7 +450,7 @@ async function pollCacheFromSub(reason = '') {
         console.log('[peach-st-cache] cache poll empty', reason);
     } catch (e) {
         console.warn('[peach-st-cache] cache poll failed', reason, e);
-        if (pendingWaitId) schedulePendingPoll(reason, 3000);
+        if (pendingWaitId || waitingBackend) schedulePendingPoll(reason, 3000);
     } finally {
         cachePollInFlight = false;
     }
@@ -537,21 +549,52 @@ async function onChatCompletionSettingsReady(generate_data) {
     waitingBackend = true;
     lastSignal = null;
     claimToken = '';
+    pendingWaitId = String(activeRequestId);
     stopCountdownTick();
     setGenState(GEN_RUNNING);
+    renderFloat();
+    // 发出即盯仓库；不靠酒馆流是否还开着
+    scheduleCachePoll('marked_send', 400);
     console.log('[peach-st-cache] step2 marker+reqId, glow on', activeRequestId.slice(0, 8));
     return true;
 }
 
-/** 步骤3收：从流里看到 sub 主动推的 peach_st_reclaim */
+/** 仓库/流信号统一入口：可取亮手；失败提示并灭灯；流信号只是加速 */
 function onReclaimSignal(sig) {
     if (!sig || typeof sig !== 'object') return;
+
+    // 正式失败：提示 + 灭灯 + 停问
+    if (sig.failed) {
+        pendingWaitId = '';
+        stopPendingPoll();
+        claimToken = '';
+        waitingBackend = false;
+        setGenState(GEN_IDLE);
+        activeRequestId = '';
+        expiresAtMs = 0;
+        stopCountdownTick();
+        lastSignal = {
+            failed: true,
+            error_message: String(sig.error_message || '取回失败'),
+            request_id: sig.request_id,
+            has_cache: false,
+        };
+        toast(String(sig.error_message || '取回失败'), 'error');
+        console.log('[peach-st-cache] failed signal', sig.error_message);
+        renderFloat();
+        return;
+    }
+
     pendingWaitId = '';
     stopPendingPoll();
     lastSignal = sig;
     claimToken = String(sig.claim_token || '').trim();
     waitingBackend = false;
     setGenState(GEN_IDLE);
+    if (sig.has_cache && claimToken) {
+        // 可取：保留 activeRequestId 到取回前亦可；取货不依赖它
+        activeRequestId = String(sig.request_id || activeRequestId || '');
+    }
 
     if (sig.has_cache && Number(sig.remaining_seconds) > 0) {
         expiresAtMs = Date.now() + Number(sig.remaining_seconds) * 1000;
