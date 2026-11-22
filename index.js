@@ -339,9 +339,22 @@ async function shouldMarkThisRequest() {
     return true;
 }
 
-/** 假断/刷新后续问「正在收」：有相认牌就每隔一会再问，直到收完或空 */
+/** 假断/刷新后续问「正在收」：有相认牌就每隔一会再问，直到收完/失败/确认空仓 */
 let pendingWaitId = '';
 let pendingPollTimer = null;
+/** 本轮是否在中转见过 pending（见过后再变空 = 终态，禁止死闪） */
+let sawServerPending = false;
+/** 连续问到空仓次数（限制空等，避免手没了还一直发光） */
+let emptyWhileWaitStreak = 0;
+/** 开始空等的时刻；超时则灭灯并提示 */
+let waitStartedAtMs = 0;
+/** 未见 pending 时最多空等（毫秒）：给中转建任务留窗口 */
+const EMPTY_WAIT_MAX_MS = 45000;
+/** 已见 pending 后连续空仓次数上限（约 2s×N）→ 视为已结束且无货 */
+const EMPTY_AFTER_PENDING_MAX = 3;
+/** 问库 HTTP 连续失败上限，避免闪灯到死 */
+const POLL_HTTP_FAIL_MAX = 8;
+let pollHttpFailStreak = 0;
 
 function stopPendingPoll() {
     if (pendingPollTimer != null) {
@@ -356,6 +369,27 @@ function schedulePendingPoll(reason = '', delayMs = 2000) {
         pendingPollTimer = null;
         void pollCacheFromSub(reason || 'pending_wait');
     }, delayMs);
+}
+
+/**
+ * 灭等待光、停死循环问库。手/费用数字由调用方决定是否另清。
+ * @param {string} reason
+ * @param {{ toastMsg?: string, toastType?: string, clearActiveId?: boolean }} [opts]
+ */
+function clearWaitGlow(reason, opts = {}) {
+    const clearActiveId = opts.clearActiveId !== false;
+    pendingWaitId = '';
+    sawServerPending = false;
+    emptyWhileWaitStreak = 0;
+    pollHttpFailStreak = 0;
+    waitStartedAtMs = 0;
+    waitingBackend = false;
+    stopPendingPoll();
+    setGenState(GEN_IDLE);
+    if (clearActiveId) activeRequestId = '';
+    if (opts.toastMsg) toast(String(opts.toastMsg), opts.toastType || 'warning');
+    console.log('[peach-st-cache] clear wait glow', reason, opts.toastMsg || '');
+    renderFloat();
 }
 
 /**
@@ -387,11 +421,21 @@ async function pollCacheFromSub(reason = '') {
             },
         });
         if (!res.ok) {
-            console.warn('[peach-st-cache] cache poll http', res.status, reason);
-            // 问库本身失败：若已在等本轮，继续隔一会再问，不灭灯抢断
-            if (pendingWaitId || waitingBackend) schedulePendingPoll(reason, 3000);
+            pollHttpFailStreak += 1;
+            console.warn('[peach-st-cache] cache poll http', res.status, reason, pollHttpFailStreak);
+            if ((pendingWaitId || waitingBackend) && pollHttpFailStreak < POLL_HTTP_FAIL_MAX) {
+                schedulePendingPoll(reason, 3000);
+                return;
+            }
+            if (pendingWaitId || waitingBackend) {
+                clearWaitGlow('poll_http_fail', {
+                    toastMsg: `问取回仓库失败（HTTP ${res.status}）`,
+                    toastType: 'error',
+                });
+            }
             return;
         }
+        pollHttpFailStreak = 0;
         const st = await res.json();
         // 正式失败
         if (st?.failed) {
@@ -406,6 +450,8 @@ async function pollCacheFromSub(reason = '') {
         }
         // 收完
         if (st?.has_cache && String(st.claim_token || '').trim()) {
+            emptyWhileWaitStreak = 0;
+            sawServerPending = false;
             onReclaimSignal({
                 has_cache: true,
                 claim_token: st.claim_token,
@@ -427,20 +473,43 @@ async function pollCacheFromSub(reason = '') {
         }
         // 正在收：号码牌 + 发光 + 续问
         if (st?.pending) {
+            sawServerPending = true;
+            emptyWhileWaitStreak = 0;
             pendingWaitId = String(st.request_id || pendingWaitId || activeRequestId || '').trim();
             waitingBackend = true;
+            if (!waitStartedAtMs) waitStartedAtMs = Date.now();
             renderFloat();
             console.log('[peach-st-cache] cache poll pending plate', String(pendingWaitId).slice(0, 8), reason);
             schedulePendingPoll(reason, 2000);
             return;
         }
-        // 空：若本轮刚发出、还在等（酒馆可能还没打进中转），短间隔再问几次
+        // 空：允许短暂空等；禁止无限闪灯
         if (waitingBackend || pendingWaitId || activeRequestId) {
             if (!pendingWaitId && activeRequestId) pendingWaitId = String(activeRequestId);
-            console.log('[peach-st-cache] cache poll empty while waiting', reason);
+            if (!waitStartedAtMs) waitStartedAtMs = Date.now();
+            emptyWhileWaitStreak += 1;
+            const waitedMs = Date.now() - waitStartedAtMs;
+            // 曾见进行中 → 再变空：中转已收尾且无货/已过期
+            if (sawServerPending && emptyWhileWaitStreak >= EMPTY_AFTER_PENDING_MAX) {
+                clearWaitGlow('empty_after_pending', {
+                    toastMsg: '取回仓库已空（无正文或已过期）',
+                    toastType: 'warning',
+                });
+                return;
+            }
+            // 从未进 pending：只给中转建任务留窗口，超时灭灯提示
+            if (!sawServerPending && waitedMs >= EMPTY_WAIT_MAX_MS) {
+                clearWaitGlow('empty_wait_timeout', {
+                    toastMsg: '中转长时间无取回状态（可能请求失败）',
+                    toastType: 'warning',
+                });
+                return;
+            }
+            console.log('[peach-st-cache] cache poll empty while waiting', reason, emptyWhileWaitStreak, waitedMs);
             schedulePendingPoll(reason, 2000);
             return;
         }
+        emptyWhileWaitStreak = 0;
         pendingWaitId = '';
         stopPendingPoll();
         if (waitingBackend && !claimToken) {
@@ -449,8 +518,18 @@ async function pollCacheFromSub(reason = '') {
         }
         console.log('[peach-st-cache] cache poll empty', reason);
     } catch (e) {
+        pollHttpFailStreak += 1;
         console.warn('[peach-st-cache] cache poll failed', reason, e);
-        if (pendingWaitId || waitingBackend) schedulePendingPoll(reason, 3000);
+        if ((pendingWaitId || waitingBackend) && pollHttpFailStreak < POLL_HTTP_FAIL_MAX) {
+            schedulePendingPoll(reason, 3000);
+            return;
+        }
+        if (pendingWaitId || waitingBackend) {
+            clearWaitGlow('poll_exception', {
+                toastMsg: '问取回仓库异常，已停止等待',
+                toastType: 'error',
+            });
+        }
     } finally {
         cachePollInFlight = false;
     }
@@ -550,6 +629,10 @@ async function onChatCompletionSettingsReady(generate_data) {
     lastSignal = null;
     claimToken = '';
     pendingWaitId = String(activeRequestId);
+    sawServerPending = false;
+    emptyWhileWaitStreak = 0;
+    pollHttpFailStreak = 0;
+    waitStartedAtMs = Date.now();
     stopCountdownTick();
     setGenState(GEN_RUNNING);
     renderFloat();
@@ -565,12 +648,7 @@ function onReclaimSignal(sig) {
 
     // 正式失败：提示 + 灭灯 + 停问
     if (sig.failed) {
-        pendingWaitId = '';
-        stopPendingPoll();
         claimToken = '';
-        waitingBackend = false;
-        setGenState(GEN_IDLE);
-        activeRequestId = '';
         expiresAtMs = 0;
         stopCountdownTick();
         lastSignal = {
@@ -579,14 +657,19 @@ function onReclaimSignal(sig) {
             request_id: sig.request_id,
             has_cache: false,
         };
-        toast(String(sig.error_message || '取回失败'), 'error');
-        console.log('[peach-st-cache] failed signal', sig.error_message);
-        renderFloat();
+        clearWaitGlow('failed_signal', {
+            toastMsg: String(sig.error_message || '取回失败'),
+            toastType: 'error',
+        });
         return;
     }
 
     pendingWaitId = '';
     stopPendingPoll();
+    sawServerPending = false;
+    emptyWhileWaitStreak = 0;
+    pollHttpFailStreak = 0;
+    waitStartedAtMs = 0;
     lastSignal = sig;
     claimToken = String(sig.claim_token || '').trim();
     waitingBackend = false;
@@ -594,6 +677,8 @@ function onReclaimSignal(sig) {
     if (sig.has_cache && claimToken) {
         // 可取：保留 activeRequestId 到取回前亦可；取货不依赖它
         activeRequestId = String(sig.request_id || activeRequestId || '');
+    } else {
+        activeRequestId = '';
     }
 
     if (sig.has_cache && Number(sig.remaining_seconds) > 0) {
@@ -621,7 +706,7 @@ function startCountdownTick() {
     countdownTimer = setInterval(() => {
         renderFloat();
         if (expiresAtMs && Date.now() >= expiresAtMs) {
-            // 倒计时到：只关掉可取回（手变灰、令牌作废）；费用/token/余额数字保留，等下一票新信号再替换
+            // 倒计时到：关手+清等待态，禁止「手没了还闪」；费用数字保留
             if (lastSignal) {
                 lastSignal.has_cache = false;
                 lastSignal.remaining_seconds = 0;
@@ -629,7 +714,7 @@ function startCountdownTick() {
             claimToken = '';
             expiresAtMs = 0;
             stopCountdownTick();
-            renderFloat();
+            clearWaitGlow('countdown_expired', { clearActiveId: true });
         }
     }, 1000);
 }
@@ -641,7 +726,7 @@ function stopCountdownTick() {
     }
 }
 
-/** 截获酒馆→本机中转的流，只读 peach_st_reclaim，不碰密钥 */
+/** 截获酒馆→本机中转的流：peach_st_reclaim + 显式 error 帧 */
 function patchFetchForReclaim() {
     if (fetchPatched) return;
     fetchPatched = true;
@@ -653,7 +738,17 @@ function patchFetchForReclaim() {
             if (!String(url).includes('/api/backends/chat-completions/generate')) {
                 return res;
             }
-            if (!res.body || !res.ok) return res;
+            // 酒馆代理层直接非 2xx：中转/网关已失败，禁止继续闪灯干等
+            if (!res.ok) {
+                if (waitingBackend || pendingWaitId || activeRequestId) {
+                    clearWaitGlow('generate_http_error', {
+                        toastMsg: `生成请求失败（HTTP ${res.status}）`,
+                        toastType: 'error',
+                    });
+                }
+                return res;
+            }
+            if (!res.body) return res;
             const [tee1, tee2] = res.body.tee();
             void scanReclaimFromStream(tee2);
             return new Response(tee1, {
@@ -691,7 +786,17 @@ async function scanReclaimFromStream(stream) {
                     if (parsed && parsed.peach_st_reclaim) {
                         onReclaimSignal(parsed.peach_st_reclaim);
                     }
-            } catch {
+                    // OpenAI 风格错误帧：有则立刻提示并灭灯（仍可再问库收 failed）
+                    if (parsed && parsed.error && (waitingBackend || pendingWaitId || activeRequestId)) {
+                        const msg = String(parsed.error.message || parsed.error.code || '生成失败');
+                        onReclaimSignal({
+                            failed: true,
+                            error_message: msg,
+                            has_cache: false,
+                        });
+                        scheduleCachePoll('stream_error', 400);
+                    }
+                } catch {
                     /* ignore non-json frames */
                 }
             }
@@ -1226,7 +1331,7 @@ async function applyClaimedText(text, reasoning) {
                 chat.pop();
             }
             await ctx.saveReply({ type: 'normal', getMessage: trimmed, reasoning: reasoningText });
-            toast('已取回并正规写入（含思考）', 'success');
+            toast(reasoningText ? '已取回并正规写入（含思考）' : '已取回并正规写入', 'success');
         } else if (aiAtNext) {
             // 中间夹楼：normal 只能建在末尾，只能原地换正文+思考并刷 UI
             chat[aiIdx].mes = trimmed;
@@ -1240,11 +1345,11 @@ async function applyClaimedText(text, reasoning) {
             if (typeof ctx.updateReasoningUI === 'function') {
                 ctx.updateReasoningUI(aiIdx, { reset: true });
             }
-            toast('已覆盖中间 AI 楼层（含思考）', 'success');
+            toast(reasoningText ? '已覆盖中间 AI 楼层（含思考）' : '已覆盖中间 AI 楼层', 'success');
         } else {
             // 用户下一层空着：门口正规建楼
             await ctx.saveReply({ type: 'normal', getMessage: trimmed, reasoning: reasoningText });
-            toast('已新建 AI 回复（取回）', 'success');
+            toast(reasoningText ? '已新建 AI 回复（取回，含思考）' : '已新建 AI 回复（取回）', 'success');
         }
         if (typeof ctx.saveChat === 'function') await ctx.saveChat();
         return true;
@@ -1274,9 +1379,14 @@ async function onClaimClick() {
             body: JSON.stringify({ claim_token: claimToken }),
         });
         if (res.status === 204) {
-            toast('缓存已过期或不存在', 'warning');
             claimToken = '';
             if (lastSignal) lastSignal.has_cache = false;
+            expiresAtMs = 0;
+            stopCountdownTick();
+            clearWaitGlow('claim_204', {
+                toastMsg: '缓存已过期或不存在',
+                toastType: 'warning',
+            });
             return;
         }
         if (!res.ok) {
